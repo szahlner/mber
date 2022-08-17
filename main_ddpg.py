@@ -119,11 +119,10 @@ agent = DDPG(env.observation_space.shape[0], env.action_space, args)
 
 # Tensorboard
 writer = SummaryWriter(
-    "runs/{}_DDPG_{}_{}{}{}_vr{}_ur{}".format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
+    "runs/{}_DDPG_{}_{}{}_vr{}_ur{}".format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
                                               args.env_name,
                                               args.seed,
                                               "_mb" if args.model_based else "",
-                                              "_nmer" if args.nmer else "",
                                               args.v_ratio,
                                               args.updates_per_step,
                                               )
@@ -135,7 +134,7 @@ with open(config_path, "w") as f:
     json.dump(args.__dict__, f, indent=4)
 
 # Memory
-if args.nmer or args.model_based:
+if args.model_based:
     from utils.replay_memory import MBPOReplayMemory
     memory = MBPOReplayMemory(args.replay_size, args.seed, v_ratio=args.v_ratio, env_name=args.env_name, args=args)
 else:
