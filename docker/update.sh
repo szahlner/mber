@@ -12,6 +12,6 @@ git clone https://github.com/szahlner/shadowhand-gym.git
 pip3 install -e shadowhand-gym
 
 # Set permissions and prepare runs
-cd "/home/mbher/scripts/"
+cd "/home/mber/scripts/"
 chmod +x "./run_experiments.sh"
 ./run_experiments.sh
