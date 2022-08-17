@@ -1,0 +1,8 @@
+numpy
+mpi4py
+gym==0.21.0
+pybullet
+joblib
+mujoco-py<2.2,>=2.1
+tensorboard
+sklearn
