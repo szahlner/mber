@@ -14,4 +14,4 @@ pip3 install -e shadowhand-gym
 # Set permissions and prepare runs
 cd "/home/mbher/scripts/"
 chmod +x "./run_experiments.sh"
-./prepare-run.sh
+./run_experiments.sh
