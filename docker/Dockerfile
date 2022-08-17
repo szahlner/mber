@@ -37,9 +37,6 @@ RUN mkdir /root/.mujoco && \
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/root/.mujoco/mujoco210/bin
 ENV LD_PRELOAD=$LD_PRELOAD:/usr/lib/x86_64-linux-gnu/libGLEW.so
 
-# Create a directory in which we can do our work
-RUN mkdir /home/
-
 # Copy to image and set workdir
 COPY . /home/
 WORKDIR /home/
