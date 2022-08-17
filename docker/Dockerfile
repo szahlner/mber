@@ -55,7 +55,6 @@ RUN rm /home/Dockerfile
 
 # Install hybrid-rl and shadowhand-gym and prepare to run the experiments
 RUN chmod +x "./update.sh"
-RUN chmod +x "./prepare-run.sh"
 RUN ./update.sh
 
 ENTRYPOINT ["/bin/bash"]
