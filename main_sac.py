@@ -62,7 +62,7 @@ parser.add_argument('--eval-timesteps', type=int, default=1000, metavar='N',
                     help='when to eval the policy (default: 1000)')
 parser.add_argument('--update-env-model', type=int, default=250, metavar='N',
                     help='when to update the environment model (default: 500)')
-parser.add_argument('--n-training-samples', type=int, default=-1, metavar='N',
+parser.add_argument('--n-training-samples', type=int, default=100000, metavar='N',
                     help='number of samples to train the environment model on (default: 100000)')
 parser.add_argument('--n-rollout-samples', type=int, default=100000, metavar='N',
                     help='number of samples to rollout the environment model on (default: 100000)')
@@ -82,11 +82,14 @@ parser.add_argument('--rollout-max-length', type=int, default=15, metavar='N',
 args = parser.parse_args()
 
 args.cuda = True if torch.cuda.is_available() else False
-args.n_training_samples = args.num_steps if args.n_training_samples == -1 else args.n_training_samples
 
 # Environment
-# env = NormalizedActions(gym.make(args.env_name))
 env = gym.make(args.env_name)
+
+if args.env_name == "Ant-v2":
+    from environment.ant_truncated import AntTruncatedV2
+    env = AntTruncatedV2(env)
+
 env.seed(args.seed)
 env.action_space.seed(args.seed)
 eval_env = gym.make(args.env_name)
