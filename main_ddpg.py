@@ -88,6 +88,11 @@ if args.env_name == "Ant-v2":
 env.seed(args.seed)
 env.action_space.seed(args.seed)
 eval_env = gym.make(args.env_name)
+
+if args.env_name == "Ant-v2":
+    from environment.ant_truncated import AntTruncatedV2
+    eval_env = AntTruncatedV2(eval_env)
+
 eval_env.seed(args.seed)
 random.seed(args.seed)
 torch.manual_seed(args.seed)
