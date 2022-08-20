@@ -73,6 +73,8 @@ parser.add_argument('--rollout-min-length', type=int, default=1, metavar='N',
                     help='rollout min length (default: 1)')
 parser.add_argument('--rollout-max-length', type=int, default=1, metavar='N',
                     help='rollout max length (default: 15)')
+parser.add_argument('--deterministic-model', action="store_true",
+                    help='use Model-based deterministic model (default: False)')
 
 args = parser.parse_args()
 
@@ -102,20 +104,36 @@ if torch.cuda.is_available():
 
 # Model-based
 if args.model_based:
-    from mdp.mdp_model import EnsembleDynamicsModel
     from utils.utils import get_predicted_states
 
     state_size = np.prod(env.observation_space.shape)
     action_size = np.prod(env.action_space.shape)
-    env_model = EnsembleDynamicsModel(
-        network_size=7,
-        elite_size=5,
-        state_size=state_size,
-        action_size=action_size,
-        reward_size=1,
-        hidden_size=200,
-        use_decay=True
-    )
+
+    if args.deterministic_model:
+        from mdp.mdp_model_deterministic import EnsembleDynamicsModel
+
+        env_model = EnsembleDynamicsModel(
+            network_size=7,
+            elite_size=5,
+            state_size=state_size,
+            action_size=action_size,
+            reward_size=1,
+            hidden_size=200,
+            dropout_rate=0.05,
+            use_decay=True
+        )
+    else:
+        from mdp.mdp_model import EnsembleDynamicsModel
+
+        env_model = EnsembleDynamicsModel(
+            network_size=7,
+            elite_size=5,
+            state_size=state_size,
+            action_size=action_size,
+            reward_size=1,
+            hidden_size=200,
+            use_decay=True
+        )
 
 # Experience
 Experience = namedtuple(
@@ -127,12 +145,13 @@ agent = DDPG(env.observation_space.shape[0], env.action_space, args)
 
 # Tensorboard
 writer = SummaryWriter(
-    "runs/{}_DDPG_{}_{}{}_vr{}_ur{}".format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
+    "runs/{}_DDPG_{}_{}{}_vr{}_ur{}{}".format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
                                               args.env_name,
                                               args.seed,
                                               "_mb" if args.model_based else "",
                                               args.v_ratio,
                                               args.updates_per_step,
+                                              "_deterministic" if args.deterministic_model else "",
                                               )
 )
 
