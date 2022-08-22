@@ -183,7 +183,7 @@ if args.model_based:
 else:
     if args.nmer:
         from utils.replay_memory import NmerReplayMemory
-        memory = NmerReplayMemory(args.replay_size, args.seed, k_neighbours=args.k_neighbours)
+        memory = NmerReplayMemory(args.replay_size, args.seed, env_name=args.env_name, k_neighbours=args.k_neighbours)
     else:
         from utils.replay_memory import ReplayMemory
         memory = ReplayMemory(args.replay_size, args.seed)
