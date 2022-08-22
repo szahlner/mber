@@ -146,14 +146,15 @@ agent = DDPG(env.observation_space.shape[0], env.action_space, args)
 
 # Tensorboard
 writer = SummaryWriter(
-    "runs/{}_DDPG_{}_{}{}_vr{}_ur{}{}".format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
-                                              args.env_name,
-                                              args.seed,
-                                              "_mb" if args.model_based else "",
-                                              args.v_ratio,
-                                              args.updates_per_step,
-                                              "_deterministic" if args.deterministic_model else "",
-                                              )
+    "runs/{}_DDPG_{}_{}{}{}_vr{}_ur{}{}".format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
+                                                args.env_name,
+                                                args.seed,
+                                                "_mb" if args.model_based else "",
+                                                "_nmer" if args.nmer else "",
+                                                args.v_ratio,
+                                                args.updates_per_step,
+                                                "_deterministic" if args.deterministic_model else "",
+                                                )
 )
 
 # Save args/config to file
