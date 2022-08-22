@@ -200,23 +200,8 @@ class NmerReplayMemory(ReplayMemory):
 
 
 class MbpoNmerReplayMemory(MbpoReplayMemory):
-    def __init__(self, capacity, seed, v_capacity=None, v_ratio=1.0, k_neighbours=10, env_name="Hopper-v2", args=None):
-        super().__init__(capacity, seed)
-
-        assert args is not None, "args must not be None"
-
-        if v_capacity is None:
-            self.v_capacity = capacity
-        else:
-            self.v_capacity = v_capacity
-        self.v_buffer = []
-        self.v_position = 0
-
-        # MBPO settings
-        self.args = args
-        self.rollout_length = 1  # always start with 1
-        self.v_ratio = v_ratio
-        self.env_name = env_name
+    def __init__(self, capacity, seed, v_capacity=None, v_ratio=1.0, env_name="Hopper-v2", args=None, k_neighbours=10):
+        super().__init__(capacity, seed, v_capacity=v_capacity, v_ratio=v_ratio, env_name=env_name, args=args)
 
         # Interpolation settings
         self.k_neighbours = k_neighbours
@@ -262,7 +247,7 @@ class MbpoNmerReplayMemory(MbpoReplayMemory):
         nn_indices = self.nn_indices[sample_indices].copy()
 
         # Remove itself, shuffle and chose
-        v_nn_indices = v_sample_indices[:, 1:]
+        v_nn_indices = v_nn_indices[:, 1:]
         v_indices = np.random.rand(*v_nn_indices.shape).argsort(axis=1)
         v_nn_indices = np.take_along_axis(v_nn_indices, v_indices, axis=1)
         v_nn_indices = v_nn_indices[:, 0]
