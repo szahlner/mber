@@ -136,3 +136,64 @@ class MBPOReplayMemory(ReplayMemory):
         done = np.concatenate((done, v_done), axis=0)
 
         return state, action, reward, next_state, done
+
+
+class NMERReplayMemory(ReplayMemory):
+    def __init__(self, capacity, seed, k_neighbours=10, env_name="Hopper-v2"):
+        super().__init__(capacity, seed)
+
+        # Interpolation settings
+        self.k_neighbours = k_neighbours
+        self.nn_indices = None
+
+        self.env_name = env_name
+
+    def update_neighbours(self):
+        # Get whole buffer
+        state, action, _, _, _ = map(np.stack, zip(*self.buffer))
+
+        # Construct Z-space
+        z_space = np.concatenate((state, action), axis=-1)
+        z_space_norm = StandardScaler(with_mean=False).fit_transform(z_space)
+
+        # NearestNeighbors - object
+        k_nn = NearestNeighbors(n_neighbors=self.k_neighbours).fit(z_space_norm)
+        self.nn_indices = k_nn.kneighbors(z_space_norm, return_distance=False)
+
+    def sample(self, batch_size):
+        assert self.nn_indices is not None, "Memory not prepared yet! Call .prepare()"
+
+        # Sample
+        sample_indices = np.random.randint(len(self.buffer), size=batch_size)
+        nn_indices = self.nn_indices[sample_indices].copy()
+
+        # Remove itself, shuffle and chose
+        nn_indices = nn_indices[:, 1:]
+        indices = np.random.rand(*nn_indices.shape).argsort(axis=1)
+        nn_indices = np.take_along_axis(nn_indices, indices, axis=1)
+        nn_indices = nn_indices[:, 0]
+
+        # Get whole buffer
+        state, action, reward, next_state, _ = map(np.stack, zip(*self.buffer))
+
+        # Actually sample
+        state, nn_state = state[sample_indices], state[nn_indices]
+        action, nn_action = action[sample_indices], action[nn_indices]
+        reward, nn_reward = reward[sample_indices], reward[nn_indices]
+        next_state, nn_next_state = next_state[sample_indices], next_state[nn_indices]
+
+        delta_state = (next_state - state).copy()
+        nn_delta_state = (nn_next_state - nn_state).copy()
+
+        # Linearly interpolate sample and neighbor points
+        mixing_param = np.random.uniform(size=(len(state), 1))
+        state = state * mixing_param + nn_state * (1 - mixing_param)
+        action = action * mixing_param + nn_action * (1 - mixing_param)
+        reward = reward * mixing_param.squeeze() + nn_reward * (1 - mixing_param).squeeze()
+        delta_state = delta_state * mixing_param + nn_delta_state * (1 - mixing_param)
+        next_state = state + delta_state
+
+        done = termination_fn(self.env_name, state, action, next_state)
+        mask = np.invert(done).astype(float).squeeze()
+
+        return state, action, reward, next_state, mask

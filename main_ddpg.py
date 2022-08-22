@@ -51,10 +51,6 @@ parser.add_argument('--v-ratio', type=float, default=1.0, metavar='N',
                     help='virtual ratio (default: 1.0)')
 parser.add_argument('--eval-timesteps', type=int, default=1000, metavar='N',
                     help='when to eval the policy (default: 1000)')
-# parser.add_argument('--nmer', action="store_true",
-#                     help='use NMER (default: False)')
-# parser.add_argument('--k-neighbours', type=int, default=7, metavar='N',
-#                     help='amount of neighbours to use (default: 7)')
 parser.add_argument('--update-env-model', type=int, default=250, metavar='N',
                     help='when to update the environment model (default: 500)')
 parser.add_argument('--n-training-samples', type=int, default=100000, metavar='N',
@@ -75,6 +71,11 @@ parser.add_argument('--rollout-max-length', type=int, default=1, metavar='N',
                     help='rollout max length (default: 15)')
 parser.add_argument('--deterministic-model', action="store_true",
                     help='use Model-based deterministic model (default: False)')
+parser.add_argument('--nmer', action="store_true",
+                    help='use NMER (default: False)')
+parser.add_argument('--k-neighbours', type=int, default=10, metavar='N',
+                    help='amount of neighbours to use (default: 7)')
+
 
 args = parser.parse_args()
 
@@ -165,8 +166,12 @@ if args.model_based:
     from utils.replay_memory import MBPOReplayMemory
     memory = MBPOReplayMemory(args.replay_size, args.seed, v_ratio=args.v_ratio, env_name=args.env_name, args=args)
 else:
-    from utils.replay_memory import ReplayMemory
-    memory = ReplayMemory(args.replay_size, args.seed)
+    if args.nmer:
+        from utils.replay_memory import NMERReplayMemory
+        memory = NMERReplayMemory(args.replay_size, args.seed, k_neighbours=args.k_neighbours)
+    else:
+        from utils.replay_memory import ReplayMemory
+        memory = ReplayMemory(args.replay_size, args.seed)
 
 # Exploration Loop
 total_numsteps = 0
@@ -198,6 +203,9 @@ while total_numsteps < args.start_steps:
     for t in range(steps_taken):
         state, action, reward, next_state, mask = episode_trajectory[t]
         memory.push(state, action, reward, next_state, mask)  # Append transition to memory
+
+if args.nmer:
+    memory.update_neighbours()
 
 # Training Loop
 total_numsteps = 0
@@ -295,6 +303,9 @@ for i_episode in itertools.count(1):
     for t in range(steps_taken):
         state, action, reward, next_state, mask = episode_trajectory[t]
         memory.push(state, action, reward, next_state, mask)  # Append transition to memory
+
+    if args.nmer:
+        memory.update_neighbours()
 
     writer.add_scalar('reward/train_timesteps', episode_reward, total_numsteps)
     print("Episode: {}, total numsteps: {}, episode steps: {}, reward: {}, time/step: {}s".format(i_episode,
