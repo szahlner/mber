@@ -170,12 +170,20 @@ with open(config_path, "w") as f:
 
 # Memory
 if args.model_based:
-    from utils.replay_memory import MBPOReplayMemory
-    memory = MBPOReplayMemory(args.replay_size, args.seed, v_ratio=args.v_ratio, env_name=args.env_name, args=args)
+    if args.nmer:
+        from utils.replay_memory import MbpoNmerReplayMemory
+        memory = MbpoNmerReplayMemory(
+            args.replay_size, args.seed,
+            v_ratio=args.v_ratio, env_name=args.env_name, args=args,
+            k_neighbours=args.k_neighbours
+        )
+    else:
+        from utils.replay_memory import MbpoReplayMemory
+        memory = MbpoReplayMemory(args.replay_size, args.seed, v_ratio=args.v_ratio, env_name=args.env_name, args=args)
 else:
     if args.nmer:
-        from utils.replay_memory import NMERReplayMemory
-        memory = NMERReplayMemory(args.replay_size, args.seed, k_neighbours=args.k_neighbours)
+        from utils.replay_memory import NmerReplayMemory
+        memory = NmerReplayMemory(args.replay_size, args.seed, k_neighbours=args.k_neighbours)
     else:
         from utils.replay_memory import ReplayMemory
         memory = ReplayMemory(args.replay_size, args.seed)
@@ -260,6 +268,9 @@ for i_episode in itertools.count(1):
                 if nonterm_mask.sum() == 0:
                     break
                 o = o_2[nonterm_mask]
+
+            if args.nmer:
+                memory.update_v_neighbours()
 
         if len(memory) > args.batch_size:
             # Number of updates per step in environment

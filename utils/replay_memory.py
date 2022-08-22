@@ -47,7 +47,7 @@ class ReplayMemory:
             self.position = len(self.buffer) % self.capacity
 
 
-class MBPOReplayMemory(ReplayMemory):
+class MbpoReplayMemory(ReplayMemory):
     def __init__(self, capacity, seed, v_capacity=None, v_ratio=1.0, env_name="Hopper-v2", args=None):
         super().__init__(capacity, seed)
 
@@ -138,7 +138,7 @@ class MBPOReplayMemory(ReplayMemory):
         return state, action, reward, next_state, done
 
 
-class NMERReplayMemory(ReplayMemory):
+class NmerReplayMemory(ReplayMemory):
     def __init__(self, capacity, seed, k_neighbours=10, env_name="Hopper-v2"):
         super().__init__(capacity, seed)
 
@@ -161,7 +161,7 @@ class NMERReplayMemory(ReplayMemory):
         self.nn_indices = k_nn.kneighbors(z_space_norm, return_distance=False)
 
     def sample(self, batch_size):
-        assert self.nn_indices is not None, "Memory not prepared yet! Call .prepare()"
+        assert self.nn_indices is not None, "Memory not prepared yet! Call .update_neighbours()"
 
         # Sample
         sample_indices = np.random.randint(len(self.buffer), size=batch_size)
@@ -195,5 +195,130 @@ class NMERReplayMemory(ReplayMemory):
 
         done = termination_fn(self.env_name, state, action, next_state)
         mask = np.invert(done).astype(float).squeeze()
+
+        return state, action, reward, next_state, mask
+
+
+class MbpoNmerReplayMemory(MbpoReplayMemory):
+    def __init__(self, capacity, seed, v_capacity=None, v_ratio=1.0, k_neighbours=10, env_name="Hopper-v2", args=None):
+        super().__init__(capacity, seed)
+
+        assert args is not None, "args must not be None"
+
+        if v_capacity is None:
+            self.v_capacity = capacity
+        else:
+            self.v_capacity = v_capacity
+        self.v_buffer = []
+        self.v_position = 0
+
+        # MBPO settings
+        self.args = args
+        self.rollout_length = 1  # always start with 1
+        self.v_ratio = v_ratio
+        self.env_name = env_name
+
+        # Interpolation settings
+        self.k_neighbours = k_neighbours
+        self.nn_indices = None
+        self.v_nn_indices = None
+
+    def update_neighbours(self):
+        # Get whole buffer
+        state, action, _, _, _ = map(np.stack, zip(*self.buffer))
+
+        # Construct Z-space
+        z_space = np.concatenate((state, action), axis=-1)
+        z_space_norm = StandardScaler(with_mean=False).fit_transform(z_space)
+
+        # NearestNeighbors - object
+        k_nn = NearestNeighbors(n_neighbors=self.k_neighbours).fit(z_space_norm)
+        self.nn_indices = k_nn.kneighbors(z_space_norm, return_distance=False)
+
+    def update_v_neighbours(self):
+        # Get whole buffer
+        v_state, v_action, _, _, _ = map(np.stack, zip(*self.v_buffer))
+
+        # Construct Z-space
+        v_z_space = np.concatenate((v_state, v_action), axis=-1)
+        v_z_space_norm = StandardScaler(with_mean=False).fit_transform(v_z_space)
+
+        # NearestNeighbors - object
+        v_k_nn = NearestNeighbors(n_neighbors=self.k_neighbours).fit(v_z_space_norm)
+        self.v_nn_indices = v_k_nn.kneighbors(v_z_space_norm, return_distance=False)
+
+    def sample(self, batch_size):
+        assert self.nn_indices is not None, "Memory not prepared yet! Call .update_neighbours()"
+        assert self.v_nn_indices is not None, "Memory not prepared yet! Call .update_v_neighbours()"
+
+        v_batch_size = int(self.v_ratio * batch_size)
+        batch_size = batch_size - v_batch_size
+
+        # Sample
+        v_sample_indices = np.random.randint(len(self.v_buffer), size=v_batch_size)
+        v_nn_indices = self.v_nn_indices[v_sample_indices].copy()
+
+        sample_indices = np.random.randint(len(self.buffer), size=batch_size)
+        nn_indices = self.nn_indices[sample_indices].copy()
+
+        # Remove itself, shuffle and chose
+        v_nn_indices = v_sample_indices[:, 1:]
+        v_indices = np.random.rand(*v_nn_indices.shape).argsort(axis=1)
+        v_nn_indices = np.take_along_axis(v_nn_indices, v_indices, axis=1)
+        v_nn_indices = v_nn_indices[:, 0]
+
+        nn_indices = nn_indices[:, 1:]
+        indices = np.random.rand(*nn_indices.shape).argsort(axis=1)
+        nn_indices = np.take_along_axis(nn_indices, indices, axis=1)
+        nn_indices = nn_indices[:, 0]
+
+        # Get whole buffer
+        state, action, reward, next_state, _ = map(np.stack, zip(*self.buffer))
+        v_state, v_action, v_reward, v_next_state, _ = map(np.stack, zip(*self.v_buffer))
+
+        # Actually sample
+        v_state, v_nn_state = v_state[v_sample_indices], v_state[v_nn_indices]
+        v_action, v_nn_action = v_action[v_sample_indices], v_action[v_nn_indices]
+        v_reward, v_nn_reward = v_reward[v_sample_indices], v_reward[v_nn_indices]
+        v_next_state, v_nn_next_state = v_next_state[v_sample_indices], v_next_state[v_nn_indices]
+
+        v_delta_state = (v_next_state - v_state).copy()
+        v_nn_delta_state = (v_nn_next_state - v_nn_state).copy()
+
+        state, nn_state = state[sample_indices], state[nn_indices]
+        action, nn_action = action[sample_indices], action[nn_indices]
+        reward, nn_reward = reward[sample_indices], reward[nn_indices]
+        next_state, nn_next_state = next_state[sample_indices], next_state[nn_indices]
+
+        delta_state = (next_state - state).copy()
+        nn_delta_state = (nn_next_state - nn_state).copy()
+
+        # Linearly interpolate sample and neighbor points
+        v_mixing_param = np.random.uniform(size=(len(v_state), 1))
+        v_state = v_state * v_mixing_param + v_nn_state * (1 - v_mixing_param)
+        v_action = v_action * v_mixing_param + v_nn_action * (1 - v_mixing_param)
+        v_reward = v_reward * v_mixing_param.squeeze() + v_nn_reward * (1 - v_mixing_param).squeeze()
+        v_delta_state = v_delta_state * v_mixing_param + v_nn_delta_state * (1 - v_mixing_param)
+        v_next_state = v_state + v_delta_state
+
+        v_done = termination_fn(self.env_name, v_state, v_action, v_next_state)
+        v_mask = np.invert(v_done).astype(float).squeeze()
+
+        mixing_param = np.random.uniform(size=(len(state), 1))
+        state = state * mixing_param + nn_state * (1 - mixing_param)
+        action = action * mixing_param + nn_action * (1 - mixing_param)
+        reward = reward * mixing_param.squeeze() + nn_reward * (1 - mixing_param).squeeze()
+        delta_state = delta_state * mixing_param + nn_delta_state * (1 - mixing_param)
+        next_state = state + delta_state
+
+        done = termination_fn(self.env_name, state, action, next_state)
+        mask = np.invert(done).astype(float).squeeze()
+
+        # Concatenate
+        state = np.concatenate((state, v_state), axis=0)
+        action = np.concatenate((action, v_action), axis=0)
+        reward = np.concatenate((reward, v_reward), axis=0)
+        next_state = np.concatenate((next_state, v_next_state), axis=0)
+        mask = np.concatenate((mask, v_mask), axis=0)
 
         return state, action, reward, next_state, mask
