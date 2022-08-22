@@ -173,14 +173,9 @@ class NmerReplayMemory(ReplayMemory):
         nn_indices = np.take_along_axis(nn_indices, indices, axis=1)
         nn_indices = nn_indices[:, 0]
 
-        # Get whole buffer
-        state, action, reward, next_state, _ = map(np.stack, zip(*self.buffer))
-
         # Actually sample
-        state, nn_state = state[sample_indices], state[nn_indices]
-        action, nn_action = action[sample_indices], action[nn_indices]
-        reward, nn_reward = reward[sample_indices], reward[nn_indices]
-        next_state, nn_next_state = next_state[sample_indices], next_state[nn_indices]
+        state, action, reward, next_state, _ = map(np.stack, zip(*[self.buffer[n] for n in sample_indices]))
+        nn_state, nn_action, nn_reward, nn_next_state, _ = map(np.stack, zip(*[self.buffer[n] for n in nn_indices]))
 
         delta_state = (next_state - state).copy()
         nn_delta_state = (nn_next_state - nn_state).copy()
@@ -257,23 +252,15 @@ class MbpoNmerReplayMemory(MbpoReplayMemory):
         nn_indices = np.take_along_axis(nn_indices, indices, axis=1)
         nn_indices = nn_indices[:, 0]
 
-        # Get whole buffer
-        state, action, reward, next_state, _ = map(np.stack, zip(*self.buffer))
-        v_state, v_action, v_reward, v_next_state, _ = map(np.stack, zip(*self.v_buffer))
-
         # Actually sample
-        v_state, v_nn_state = v_state[v_sample_indices], v_state[v_nn_indices]
-        v_action, v_nn_action = v_action[v_sample_indices], v_action[v_nn_indices]
-        v_reward, v_nn_reward = v_reward[v_sample_indices], v_reward[v_nn_indices]
-        v_next_state, v_nn_next_state = v_next_state[v_sample_indices], v_next_state[v_nn_indices]
+        v_state, v_action, v_reward, v_next_state, _ = map(np.stack, zip(*[self.v_buffer[n] for n in v_sample_indices]))
+        v_nn_state, v_nn_action, v_nn_reward, v_nn_next_state, _ = map(np.stack, zip(*[self.v_buffer[n] for n in v_nn_indices]))
 
         v_delta_state = (v_next_state - v_state).copy()
         v_nn_delta_state = (v_nn_next_state - v_nn_state).copy()
 
-        state, nn_state = state[sample_indices], state[nn_indices]
-        action, nn_action = action[sample_indices], action[nn_indices]
-        reward, nn_reward = reward[sample_indices], reward[nn_indices]
-        next_state, nn_next_state = next_state[sample_indices], next_state[nn_indices]
+        state, action, reward, next_state, _ = map(np.stack, zip(*[self.buffer[n] for n in sample_indices]))
+        nn_state, nn_action, nn_reward, nn_next_state, _ = map(np.stack, zip(*[self.buffer[n] for n in nn_indices]))
 
         delta_state = (next_state - state).copy()
         nn_delta_state = (nn_next_state - nn_state).copy()
