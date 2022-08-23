@@ -184,12 +184,17 @@ if args.model_based:
         from utils.replay_memory import MbpoReplayMemory
         memory = MbpoReplayMemory(args.replay_size, args.seed, v_ratio=args.v_ratio, env_name=args.env_name, args=args)
 else:
-    if args.nmer:
+    if args.nmer and args.per:
+        from utils.replay_memory import PerNmerReplayMemory
+        state_size = np.prod(env.observation_space.shape)
+        action_size = np.prod(env.action_space.shape)
+        memory = PerNmerReplayMemory(args.replay_size, args.seed, state_dim=state_size, action_dim=action_size,
+                                     env_name=args.env_name, k_neighbours=args.k_neighbours)
+    elif args.nmer:
         from utils.replay_memory import NmerReplayMemory
         memory = NmerReplayMemory(args.replay_size, args.seed, env_name=args.env_name, k_neighbours=args.k_neighbours)
     elif args.per:
         from utils.replay_memory import PerReplayMemory
-
         state_size = np.prod(env.observation_space.shape)
         action_size = np.prod(env.action_space.shape)
         memory = PerReplayMemory(args.replay_size, args.seed, state_dim=state_size, action_dim=action_size)

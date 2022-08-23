@@ -441,3 +441,60 @@ class PerReplayMemory(BaseReplayMemory):
         weight = weight / max_weight
 
         return weight
+
+
+class PerNmerReplayMemory(PerReplayMemory):
+    def __init__(self, capacity, seed, state_dim, action_dim, priority_eps=1e-6, alpha=0.4, beta=0.6, k_neighbours=10,
+                 env_name="Hopper-v2"):
+        super().__init__(capacity, seed, state_dim=state_dim, action_dim=action_dim,
+                         priority_eps=priority_eps, alpha=alpha, beta=beta)
+
+        # Interpolation settings
+        self.k_neighbours = k_neighbours
+        self.nn_indices = None
+
+        self.env_name = env_name
+
+    def update_neighbours(self):
+        # Construct Z-space
+        z_space = np.concatenate((self.buffer["state"][:self.position], self.buffer["action"][:self.position]), axis=-1)
+        z_space_norm = StandardScaler(with_mean=False).fit_transform(z_space)
+
+        # NearestNeighbors - object
+        k_nn = NearestNeighbors(n_neighbors=self.k_neighbours).fit(z_space_norm)
+        self.nn_indices = k_nn.kneighbors(z_space_norm, return_distance=False)
+
+    def sample(self, batch_size):
+        assert self.nn_indices is not None, "Memory not prepared yet! Call .update_neighbours()"
+
+        sample_indices = self._sample_proportional(batch_size)
+        nn_indices = self.nn_indices[sample_indices].copy()
+
+        # Remove itself, shuffle and chose
+        nn_indices = nn_indices[:, 1:]
+        indices = np.random.rand(*nn_indices.shape).argsort(axis=1)
+        nn_indices = np.take_along_axis(nn_indices, indices, axis=1)
+        nn_indices = nn_indices[:, 0]
+
+        state, nn_state = self.buffer["state"][sample_indices], self.buffer["state"][nn_indices]
+        action, nn_action = self.buffer["action"][sample_indices], self.buffer["action"][nn_indices]
+        reward, nn_reward = self.buffer["reward"][sample_indices], self.buffer["reward"][nn_indices]
+        next_state, nn_next_state = self.buffer["next_state"][sample_indices], self.buffer["next_state"][nn_indices]
+
+        delta_state = (next_state - state).copy()
+        nn_delta_state = (nn_next_state - nn_state).copy()
+
+        # Linearly interpolate sample and neighbor points
+        mixing_param = np.random.uniform(size=(len(state), 1))
+        state = state * mixing_param + nn_state * (1 - mixing_param)
+        action = action * mixing_param + nn_action * (1 - mixing_param)
+        reward = reward * mixing_param + nn_reward * (1 - mixing_param)
+        delta_state = delta_state * mixing_param + nn_delta_state * (1 - mixing_param)
+        next_state = state + delta_state
+
+        done = termination_fn(self.env_name, state, action, next_state)
+        mask = np.invert(done).astype(float)
+
+        weights = np.array([self._calculate_weight(n, self.beta) for n in sample_indices])
+
+        return state, action, reward, next_state, mask, weights[:, None], sample_indices
