@@ -75,7 +75,8 @@ parser.add_argument('--nmer', action="store_true",
                     help='use NMER (default: False)')
 parser.add_argument('--k-neighbours', type=int, default=10, metavar='N',
                     help='amount of neighbours to use (default: 7)')
-
+parser.add_argument('--per', action="store_true",
+                    help='use PER (default: False)')
 
 args = parser.parse_args()
 
@@ -146,15 +147,16 @@ agent = DDPG(env.observation_space.shape[0], env.action_space, args)
 
 # Tensorboard
 writer = SummaryWriter(
-    "runs/{}_DDPG_{}_{}{}{}_vr{}_ur{}{}".format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
-                                                args.env_name,
-                                                args.seed,
-                                                "_mb" if args.model_based else "",
-                                                "_nmer" if args.nmer else "",
-                                                args.v_ratio,
-                                                args.updates_per_step,
-                                                "_deterministic" if args.deterministic_model else "",
-                                                )
+    "runs/{}_DDPG_{}_{}{}{}{}_vr{}_ur{}{}".format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
+                                                  args.env_name,
+                                                  args.seed,
+                                                  "_mb" if args.model_based else "",
+                                                  "_nmer" if args.nmer else "",
+                                                  "_per" if args.nmer else "",
+                                                  args.v_ratio,
+                                                  args.updates_per_step,
+                                                  "_deterministic" if args.deterministic_model else "",
+                                                  )
 )
 
 # Save args/config to file
@@ -178,6 +180,12 @@ else:
     if args.nmer:
         from utils.replay_memory import NmerReplayMemory
         memory = NmerReplayMemory(args.replay_size, args.seed, env_name=args.env_name, k_neighbours=args.k_neighbours)
+    elif args.per:
+        from utils.replay_memory import PerReplayMemory
+
+        state_size = np.prod(env.observation_space.shape)
+        action_size = np.prod(env.action_space.shape)
+        memory = PerReplayMemory(args.replay_size, args.seed, state_dim=state_size, action_dim=action_size)
     else:
         from utils.replay_memory import ReplayMemory
         memory = ReplayMemory(args.replay_size, args.seed)
@@ -270,7 +278,10 @@ for i_episode in itertools.count(1):
             # Number of updates per step in environment
             for i in range(args.updates_per_step):
                 # Update parameters of all the networks
-                critic_loss, policy_loss = agent.update_parameters(memory, args.batch_size, updates)
+                if args.per:
+                    critic_loss, policy_loss = agent.update_parameters_per(memory, args.batch_size, updates)
+                else:
+                    critic_loss, policy_loss = agent.update_parameters(memory, args.batch_size, updates)
                 updates += 1
             writer.add_scalar('loss/critic', critic_loss, updates)
             writer.add_scalar('loss/policy', policy_loss, updates)

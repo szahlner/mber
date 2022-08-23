@@ -79,7 +79,9 @@ parser.add_argument('--deterministic-model', action="store_true",
 parser.add_argument('--nmer', action="store_true",
                     help='use NMER (default: False)')
 parser.add_argument('--k-neighbours', type=int, default=10, metavar='N',
-                    help='amount of neighbours to use (default: 7)')
+                    help='amount of neighbours to use (default: 10)')
+parser.add_argument('--per', action="store_true",
+                    help='use PER (default: False)')
 
 args = parser.parse_args()
 
@@ -150,17 +152,18 @@ agent = SAC(env.observation_space.shape[0], env.action_space, args)
 
 # Tensorboard
 writer = SummaryWriter(
-    "runs/{}_SAC_{}_{}_{}{}{}{}_vr{}_ur{}{}".format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
-                                                    args.env_name,
-                                                    args.policy,
-                                                    args.seed,
-                                                    "_autotune" if args.automatic_entropy_tuning else "",
-                                                    "_mb" if args.model_based else "",
-                                                    "_nmer" if args.nmer else "",
-                                                    args.v_ratio,
-                                                    args.updates_per_step,
-                                                    "_deterministic" if args.deterministic_model else "",
-                                                    )
+    "runs/{}_SAC_{}_{}_{}{}{}{}{}_vr{}_ur{}{}".format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
+                                                      args.env_name,
+                                                      args.policy,
+                                                      args.seed,
+                                                      "_autotune" if args.automatic_entropy_tuning else "",
+                                                      "_mb" if args.model_based else "",
+                                                      "_nmer" if args.nmer else "",
+                                                      "_per" if args.nmer else "",
+                                                      args.v_ratio,
+                                                      args.updates_per_step,
+                                                      "_deterministic" if args.deterministic_model else "",
+                                                      )
     )
 
 # Save args/config to file
@@ -184,6 +187,12 @@ else:
     if args.nmer:
         from utils.replay_memory import NmerReplayMemory
         memory = NmerReplayMemory(args.replay_size, args.seed, env_name=args.env_name, k_neighbours=args.k_neighbours)
+    elif args.per:
+        from utils.replay_memory import PerReplayMemory
+
+        state_size = np.prod(env.observation_space.shape)
+        action_size = np.prod(env.action_space.shape)
+        memory = PerReplayMemory(args.replay_size, args.seed, state_dim=state_size, action_dim=action_size)
     else:
         from utils.replay_memory import ReplayMemory
         memory = ReplayMemory(args.replay_size, args.seed)
@@ -276,9 +285,14 @@ for i_episode in itertools.count(1):
             # Number of updates per step in environment
             for i in range(args.updates_per_step):
                 # Update parameters of all the networks
-                critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters(memory,
-                                                                                                     args.batch_size,
-                                                                                                     updates)
+                if args.per:
+                    critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters_per(memory,
+                                                                                                             args.batch_size,
+                                                                                                             updates)
+                else:
+                    critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters(memory,
+                                                                                                         args.batch_size,
+                                                                                                         updates)
                 updates += 1
             writer.add_scalar('loss/critic_1', critic_1_loss, updates)
             writer.add_scalar('loss/critic_2', critic_2_loss, updates)

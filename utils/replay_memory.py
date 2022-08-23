@@ -3,6 +3,7 @@ import pickle
 import random
 import numpy as np
 from utils.utils import termination_fn
+from utils.segment_tree import MinSegmentTree, SumSegmentTree
 from sklearn.preprocessing import StandardScaler
 from sklearn.neighbors import NearestNeighbors
 
@@ -294,3 +295,149 @@ class MbpoNmerReplayMemory(MbpoReplayMemory):
         mask = np.concatenate((mask, v_mask), axis=0)
 
         return state, action, reward, next_state, mask
+
+
+class BaseReplayMemory:
+    def __init__(self, capacity, seed, state_dim, action_dim):
+        random.seed(seed)
+        self.capacity = capacity
+        self.size = 0
+        self.position = 0
+
+        self.buffer = {
+            "state": np.empty(shape=(capacity, state_dim)),
+            "next_state": np.empty(shape=(capacity, state_dim)),
+            "action": np.empty(shape=(capacity, action_dim)),
+            "reward": np.empty(shape=(capacity, 1)),
+            "mask": np.empty(shape=(capacity, 1)),
+        }
+
+    def push(self, state, action, reward, next_state, done):
+        self.buffer["state"][self.position] = state
+        self.buffer["next_state"][self.position] = next_state
+        self.buffer["action"][self.position] = action
+        self.buffer["reward"][self.position] = reward
+        self.buffer["mask"][self.position] = done
+
+        self.position += 1
+        if self.position % self.capacity == 0:
+            self.position = 0
+
+        self.size = min(self.size + 1, self.capacity)
+
+    def sample(self, batch_size):
+        if batch_size < len(self):
+            sample_indices = np.random.choice(len(self), size=batch_size, replace=False)
+        else:
+            sample_indices = np.random.randint(len(self), size=batch_size)
+
+        state = self.buffer["state"][sample_indices]
+        action = self.buffer["action"][sample_indices]
+        reward = self.buffer["reward"][sample_indices]
+        next_state = self.buffer["next_state"][sample_indices]
+        mask = self.buffer["mask"][sample_indices]
+
+        return state, action, reward, next_state, mask
+
+    def __len__(self):
+        return self.size
+
+    def save_buffer(self, env_name, suffix="", save_path=None):
+        if not os.path.exists('checkpoints/'):
+            os.makedirs('checkpoints/')
+
+        if save_path is None:
+            save_path = "checkpoints/sac_buffer_{}_{}".format(env_name, suffix)
+        print('Saving buffer to {}'.format(save_path))
+
+        data = {"buffer": self.buffer, "position": self.position, "size": self.size}
+        with open(save_path, 'wb') as f:
+            pickle.dump(data, f)
+
+    def load_buffer(self, save_path):
+        print('Loading buffer from {}'.format(save_path))
+
+        with open(save_path, "rb") as f:
+            data = pickle.load(f)
+            self.buffer = data["buffer"]
+            self.position = data["position"]
+            self.size = data["size"]
+
+
+class PerReplayMemory(BaseReplayMemory):
+    def __init__(self, capacity, seed, state_dim, action_dim, priority_eps=1e-6, alpha=0.4, beta=0.6):
+        super().__init__(capacity, seed, state_dim=state_dim, action_dim=action_dim)
+
+        self.alpha = alpha
+        self.beta = beta
+        self.priority_eps = priority_eps
+
+        self.max_priority = 1.0
+        self.tree_position = 0
+
+        # tree capacity must be positive and a power of 2
+        tree_capacity = 1
+        while tree_capacity < self.capacity:
+            tree_capacity *= 2
+
+        self.sum_segment_tree = SumSegmentTree(tree_capacity)
+        self.min_segment_tree = MinSegmentTree(tree_capacity)
+
+    def push(self, state, action, reward, next_state, done):
+        super().push(state, action, reward, next_state, done)
+
+        self.sum_segment_tree[self.tree_position] = self.max_priority ** self.alpha
+        self.min_segment_tree[self.tree_position] = self.max_priority ** self.alpha
+
+        self.tree_position += 1
+        if self.tree_position % self.capacity == 0:
+            self.tree_position = 0
+
+    def sample(self, batch_size):
+        sample_indices = self._sample_proportional(batch_size)
+
+        state = self.buffer["state"][sample_indices]
+        action = self.buffer["action"][sample_indices]
+        reward = self.buffer["reward"][sample_indices]
+        next_state = self.buffer["next_state"][sample_indices]
+        mask = self.buffer["mask"][sample_indices]
+
+        weights = np.array([self._calculate_weight(n, self.beta) for n in sample_indices])
+
+        return state, action, reward, next_state, mask, weights[:, None], sample_indices
+
+    def update_priorities(self, indices, priorities):
+        assert len(indices) == len(priorities)
+
+        for idx, priority in zip(indices, priorities):
+            assert priority > 0
+            assert 0 <= idx < len(self)
+
+            self.sum_segment_tree[idx] = priority ** self.alpha
+            self.min_segment_tree[idx] = priority ** self.alpha
+
+            self.max_priority = max(self.max_priority, priority)
+
+    def _sample_proportional(self, batch_size):
+        sample_indices = []
+        p_total = self.sum_segment_tree.sum(0, len(self) - 1)
+        segment = p_total / batch_size
+
+        for n in range(batch_size):
+            a = segment * n
+            b = segment * (n + 1)
+            upper_bound = random.uniform(a, b)
+            idx = self.sum_segment_tree.retrieve(upper_bound)
+            sample_indices.append(idx)
+
+        return sample_indices
+
+    def _calculate_weight(self, idx, beta):
+        p_min = self.min_segment_tree.min() / self.sum_segment_tree.sum()
+        max_weight = (p_min * len(self)) ** (-beta)
+
+        p_sample = self.sum_segment_tree[idx] / self.sum_segment_tree.sum()
+        weight = (p_sample * len(self)) ** (-beta)
+        weight = weight / max_weight
+
+        return weight
