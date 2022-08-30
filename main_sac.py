@@ -82,6 +82,8 @@ parser.add_argument('--k-neighbours', type=int, default=10, metavar='N',
                     help='amount of neighbours to use (default: 10)')
 parser.add_argument('--per', action="store_true",
                     help='use PER (default: False)')
+parser.add_argument('--slapp', action="store_true",
+                    help='use SLAPP (default: False)')
 
 args = parser.parse_args()
 
@@ -152,18 +154,16 @@ agent = SAC(env.observation_space.shape[0], env.action_space, args)
 
 # Tensorboard
 writer = SummaryWriter(
-    "runs/{}_SAC_{}_{}_{}{}{}{}{}_vr{}_ur{}{}".format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
-                                                      args.env_name,
-                                                      args.policy,
-                                                      args.seed,
-                                                      "_autotune" if args.automatic_entropy_tuning else "",
-                                                      "_mb" if args.model_based else "",
-                                                      "_nmer" if args.nmer else "",
-                                                      "_per" if args.nmer else "",
-                                                      args.v_ratio,
-                                                      args.updates_per_step,
-                                                      "_deterministic" if args.deterministic_model else "",
-                                                      )
+    "runs/{}_SAC_{}_{}_{}{}{}{}{}{}_vr{}_ur{}{}".format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
+                                                        args.env_name, args.policy, args.seed,
+                                                        "_autotune" if args.automatic_entropy_tuning else "",
+                                                        "_mb" if args.model_based else "",
+                                                        "_nmer" if args.nmer else "",
+                                                        "_per" if args.nmer else "",
+                                                        "_slapp" if args.slapp else "",
+                                                        args.v_ratio, args.updates_per_step,
+                                                        "_deterministic" if args.deterministic_model else "",
+                                                        )
     )
 
 # Save args/config to file
@@ -198,6 +198,14 @@ else:
         state_size = np.prod(env.observation_space.shape)
         action_size = np.prod(env.action_space.shape)
         memory = PerReplayMemory(args.replay_size, args.seed, state_dim=state_size, action_dim=action_size)
+    elif args.slapp:
+        from utils.replay_memory import SimpleLocalApproximationReplayMemory
+        from utils.utils import get_neighboring_states
+        state_size = np.prod(env.observation_space.shape)
+        action_size = np.prod(env.action_space.shape)
+        memory = SimpleLocalApproximationReplayMemory(args.replay_size, args.seed,
+                                                      state_dim=state_size, action_dim=action_size,
+                                                      v_ratio=args.v_ratio, env_name=args.env_name, args=args)
     else:
         from utils.replay_memory import ReplayMemory
         memory = ReplayMemory(args.replay_size, args.seed)
@@ -285,6 +293,26 @@ for i_episode in itertools.count(1):
 
             if args.nmer:
                 memory.update_v_neighbours()
+
+        if args.slapp and total_numsteps % args.update_env_model == 0:
+            # Resize buffer capacity
+            current_epoch = int(total_numsteps / args.epoch_length)
+            memory.set_rollout_length(current_epoch)
+            memory.resize_v_memory()
+
+            # Rollout the environment model
+            o, _, _, _, _ = memory.sample_r(batch_size=args.n_rollout_samples)
+
+            for n in range(memory.rollout_length):
+                a = agent.select_action(o)
+                r, o_2, d = get_neighboring_states(memory, o, a, args.env_name)
+                # Push into memory
+                for k in range(len(o)):
+                    memory.push_v(o[k], a[k], float(r[k]), o_2[k], float(not d[k]))
+                nonterm_mask = ~d.squeeze(-1)
+                if nonterm_mask.sum() == 0:
+                    break
+                o = o_2[nonterm_mask]
 
         if len(memory) > args.batch_size:
             # Number of updates per step in environment

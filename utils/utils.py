@@ -1,6 +1,8 @@
 import numpy as np
 import math
 import torch
+from sklearn.preprocessing import StandardScaler
+from sklearn.neighbors import NearestNeighbors
 
 
 def create_log_gaussian(mean, log_std, t):
@@ -118,3 +120,35 @@ def get_predicted_states(model, state, action, env_name, deterministic=False):
     new_done = termination_fn(env_name, state, action, new_next_state)
 
     return new_reward, new_next_state, new_done
+
+
+def get_neighboring_states(memory, state, action, env_name, n_neighbors=7):
+    # Z-space
+    position = len(memory)
+    buffer_state, buffer_action = memory.buffer["state"][:position], memory.buffer["action"][:position]
+
+    z_space_buffer = np.concatenate((buffer_state, buffer_action), axis=-1)
+    scaler = StandardScaler(with_mean=False)
+    z_space_norm_buffer = scaler.fit_transform(z_space_buffer)
+
+    # NearestNeighbors - object
+    k_nn = NearestNeighbors(n_neighbors=n_neighbors).fit(z_space_norm_buffer)
+
+    # Query NN for rollout
+    z_space = np.concatenate((state, action), axis=-1)
+    z_space_norm = scaler.transform(z_space)
+    nn_indices = k_nn.kneighbors(z_space_norm, return_distance=False)
+
+    # Remove itself, shuffle and chose
+    nn_state = memory.buffer["state"][nn_indices]
+    nn_next_state = memory.buffer["next_state"][nn_indices]
+    nn_reward = memory.buffer["reward"][nn_indices]
+
+    nn_delta_state = nn_next_state - nn_state
+    nn_delta_state = np.mean(nn_delta_state, axis=1)
+
+    next_state = state + nn_delta_state
+    reward = np.mean(nn_reward, axis=1)
+    done = termination_fn(env_name, state, action, next_state)
+
+    return reward, next_state, done

@@ -312,6 +312,9 @@ class BaseReplayMemory:
             "mask": np.empty(shape=(capacity, 1)),
         }
 
+        self.action_dim = action_dim
+        self.state_dim = state_dim
+
     def push(self, state, action, reward, next_state, done):
         self.buffer["state"][self.position] = state
         self.buffer["next_state"][self.position] = next_state
@@ -347,7 +350,7 @@ class BaseReplayMemory:
             os.makedirs('checkpoints/')
 
         if save_path is None:
-            save_path = "checkpoints/sac_buffer_{}_{}".format(env_name, suffix)
+            save_path = "checkpoints/sac_buffer_{}_{}.pkl".format(env_name, suffix)
         print('Saving buffer to {}'.format(save_path))
 
         data = {"buffer": self.buffer, "position": self.position, "size": self.size}
@@ -498,3 +501,85 @@ class PerNmerReplayMemory(PerReplayMemory):
         weights = np.array([self._calculate_weight(n, self.beta) for n in sample_indices])
 
         return state, action, reward, next_state, mask, weights[:, None], sample_indices
+
+
+class SimpleLocalApproximationReplayMemory(BaseReplayMemory):
+    def __init__(self, capacity, seed, state_dim, action_dim,
+                 v_capacity=None, v_ratio=1.0, env_name="Hopper-v2", args=None):
+        super().__init__(capacity, seed, state_dim=state_dim, action_dim=action_dim)
+
+        assert args is not None, "args must not be None"
+
+        if v_capacity is None:
+            self.v_capacity = capacity
+        else:
+            self.v_capacity = v_capacity
+        self.v_buffer = BaseReplayMemory(self.v_capacity, seed, state_dim, action_dim)
+
+        self.v_ratio = v_ratio
+        self.env_name = env_name
+        self.args = args
+        self.rollout_length = 0
+        self.seed = seed
+
+    def set_rollout_length(self, current_epoch):
+        self.rollout_length = int(
+            min(
+                max(
+                    self.args.rollout_min_length + (current_epoch - self.args.rollout_min_epoch) / (self.args.rollout_max_epoch - self.args.rollout_min_epoch) * (self.args.rollout_max_length - self.args.rollout_min_length),
+                    self.args.rollout_min_length
+                ),
+                self.args.rollout_max_length
+            )
+        )
+
+    def resize_v_memory(self):
+        rollouts_per_epoch = self.args.n_rollout_samples * self.args.epoch_length / self.args.update_env_model
+        model_steps_per_epoch = int(self.rollout_length * rollouts_per_epoch)
+        self.v_capacity = self.args.model_retain_epochs * model_steps_per_epoch
+
+        v_position = self.v_buffer.position
+        v_state, v_action = self.v_buffer.buffer["state"][:v_position], self.v_buffer.buffer["action"][:v_position]
+        v_reward, v_mask = self.v_buffer.buffer["reward"][:v_position], self.v_buffer.buffer["mask"][:v_position]
+        v_next_state = self.v_buffer.buffer["next_state"][:v_position]
+
+        self.v_buffer = BaseReplayMemory(self.v_capacity, self.seed, self.state_dim, self.action_dim)
+
+        for n in range(len(v_state)):
+            self.push_v(v_state[n], v_action[n], float(v_reward[n]), v_next_state[n], float(v_mask[n]))
+
+    def push_v(self, state, action, reward, next_state, done):
+        self.v_buffer.push(state, action, reward, next_state, done)
+
+    def sample_v(self, batch_size):
+        return self.v_buffer.sample(batch_size=batch_size)
+
+    def sample_r(self, batch_size):
+        return super().sample(batch_size=batch_size)
+
+    def sample(self, batch_size):
+        if len(self.v_buffer) > 0:
+            v_batch_size = int(self.v_ratio * batch_size)
+            batch_size = batch_size - v_batch_size
+
+            if batch_size == 0:
+                v_state, v_action, v_reward, v_next_state, v_done = self.sample_v(batch_size=v_batch_size)
+                return v_state, v_action, v_reward, v_next_state, v_done
+
+            if v_batch_size == 0:
+                state, action, reward, next_state, done = self.sample_r(batch_size=batch_size)
+                return state, action, reward, next_state, done
+
+            state, action, reward, next_state, done = self.sample_r(batch_size=batch_size)
+            v_state, v_action, v_reward, v_next_state, v_done = self.sample_v(batch_size=v_batch_size)
+        else:
+            state, action, reward, next_state, done = self.sample_r(batch_size=batch_size)
+            return state, action, reward, next_state, done
+
+        state = np.concatenate((state, v_state), axis=0)
+        action = np.concatenate((action, v_action), axis=0)
+        reward = np.concatenate((reward, v_reward), axis=0).squeeze()
+        next_state = np.concatenate((next_state, v_next_state), axis=0)
+        done = np.concatenate((done, v_done), axis=0).squeeze()
+
+        return state, action, reward, next_state, done
