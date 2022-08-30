@@ -160,6 +160,8 @@ venv
 logs
 results
 runs
+gan
+vae
 
 # files for now
 train_trifinger.py
