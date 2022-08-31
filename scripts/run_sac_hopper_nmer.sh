@@ -11,14 +11,15 @@ rollout_min_length=1
 rollout_max_length=15
 
 # Hopper-v2 NMER
-for seed in 123 456 789
-do
-  python main_sac.py --env-name $env_name --target-entropy $target_entropy --num-steps $num_steps --start-steps $start_steps --nmer --updates-per-step $updates_per_step --seed $seed
-done
+# for seed in 123 456 789
+# do
+#   python main_sac.py --env-name $env_name --target-entropy $target_entropy --num-steps $num_steps --start-steps $start_steps --nmer --updates-per-step $updates_per_step --seed $seed
+# done
 
 
 # Hopper-v2 NMER MBPO
-for seed in 123 456 789
+# for seed in 123 456 789
+for seed in 789
 do
   python main_sac.py --env-name $env_name --target-entropy $target_entropy --num-steps $num_steps --start-steps $start_steps --nmer --model-based --updates-per-step $updates_per_step --v-ratio 0.95 --rollout-min-epoch $rollout_min_epoch --rollout-max-epoch $rollout_max_epoch --rollout-min-length $rollout_min_length --rollout-max-length $rollout_max_length --seed $seed
 done
