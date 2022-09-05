@@ -6,6 +6,8 @@ from utils.utils import termination_fn
 from utils.segment_tree import MinSegmentTree, SumSegmentTree
 from sklearn.preprocessing import StandardScaler
 from sklearn.neighbors import NearestNeighbors
+from scipy.spatial import Delaunay
+from sklearn.decomposition import PCA
 
 
 class ReplayMemory:
@@ -505,13 +507,13 @@ class PerNmerReplayMemory(PerReplayMemory):
 
 class SimpleLocalApproximationReplayMemory(BaseReplayMemory):
     def __init__(self, capacity, seed, state_dim, action_dim,
-                 v_capacity=None, v_ratio=1.0, env_name="Hopper-v2", args=None):
+                 v_capacity=None, v_ratio=1.0, env_name="Hopper-v2", k_neighbors=7, args=None):
         super().__init__(capacity, seed, state_dim=state_dim, action_dim=action_dim)
 
         assert args is not None, "args must not be None"
 
         if v_capacity is None:
-            self.v_capacity = capacity
+            self.v_capacity = args.updates_per_step * args.update_env_model
         else:
             self.v_capacity = v_capacity
         self.v_buffer = BaseReplayMemory(self.v_capacity, seed, state_dim, action_dim)
@@ -522,31 +524,74 @@ class SimpleLocalApproximationReplayMemory(BaseReplayMemory):
         self.rollout_length = 0
         self.seed = seed
 
-    def set_rollout_length(self, current_epoch):
-        self.rollout_length = int(
-            min(
-                max(
-                    self.args.rollout_min_length + (current_epoch - self.args.rollout_min_epoch) / (self.args.rollout_max_epoch - self.args.rollout_min_epoch) * (self.args.rollout_max_length - self.args.rollout_min_length),
-                    self.args.rollout_min_length
-                ),
-                self.args.rollout_max_length
-            )
-        )
+        self.max_delaunay_dim = 3
+        self.delaunay_dim = min(state_dim + action_dim, self.max_delaunay_dim)
+        self.use_pca = True if state_dim + action_dim > self.max_delaunay_dim else False
+        if self.use_pca:
+            self.pca = PCA(n_components=self.delaunay_dim)
+        self.buffer["pca"] = np.empty(shape=(capacity, self.delaunay_dim))
+        self.k_neighbors = k_neighbors
+        self.delaunay = None
+        self.nn_indices = None
 
-    def resize_v_memory(self):
-        rollouts_per_epoch = self.args.n_rollout_samples * self.args.epoch_length / self.args.update_env_model
-        model_steps_per_epoch = int(self.rollout_length * rollouts_per_epoch)
-        self.v_capacity = self.args.model_retain_epochs * model_steps_per_epoch
+    def update_neighbours(self):
+        # Get whole buffer
+        state, action = self.buffer["state"][:self.position], self.buffer["action"][:self.position]
 
-        v_position = self.v_buffer.position
-        v_state, v_action = self.v_buffer.buffer["state"][:v_position], self.v_buffer.buffer["action"][:v_position]
-        v_reward, v_mask = self.v_buffer.buffer["reward"][:v_position], self.v_buffer.buffer["mask"][:v_position]
-        v_next_state = self.v_buffer.buffer["next_state"][:v_position]
+        # Construct Z-space
+        z_space = np.concatenate((state, action), axis=-1)
+        if self.use_pca:
+            z_space = self.pca.fit_transform(z_space)
+            self.delaunay = None
 
-        self.v_buffer = BaseReplayMemory(self.v_capacity, self.seed, self.state_dim, self.action_dim)
+        if self.delaunay is None and not self.use_pca:
+            self.delaunay = Delaunay(z_space, incremental=True)
+        elif self.delaunay is None and self.use_pca:
+            self.delaunay = Delaunay(z_space)
+        else:
+            self.delaunay.add_points(z_space)
 
-        for n in range(len(v_state)):
-            self.push_v(v_state[n], v_action[n], float(v_reward[n]), v_next_state[n], float(v_mask[n]))
+        index_pointers, indices = self.delaunay.vertex_neighbor_vertices
+        self.nn_indices = np.ones(shape=(self.position, self.k_neighbors), dtype=int) * -1
+        for n in range(self.position):
+            result_ids = indices[index_pointers[n]:index_pointers[n + 1]]
+            k = min(len(result_ids), self.k_neighbors)
+            self.nn_indices[n, :k] = result_ids[:k]
+
+    def prepare_v_memory(self):
+        self.update_neighbours()
+
+        sample_indices = np.random.randint(len(self), size=self.v_capacity)
+        nn_indices = self.nn_indices[sample_indices]
+
+        # Remove itself, shuffle and chose
+        indices = np.random.rand(*nn_indices.shape).argsort(axis=1)
+        nn_indices = np.take_along_axis(nn_indices, indices, axis=1)
+        nn_indices = nn_indices[:, 0]
+
+        # Actually sample
+        state, action = self.buffer["state"][sample_indices], self.buffer["action"][sample_indices]
+        next_state, reward = self.buffer["next_state"][sample_indices], self.buffer["reward"][sample_indices]
+
+        tn_state, tn_action = self.buffer["state"][nn_indices], self.buffer["action"][nn_indices]
+        tn_next_state, tn_reward = self.buffer["next_state"][nn_indices], self.buffer["reward"][nn_indices]
+
+        delta_state = (next_state - state).copy()
+        tn_delta_state = (tn_next_state - tn_state).copy()
+
+        # Linearly interpolate sample and neighbor points
+        mixing_param = np.random.uniform(size=(len(state), 1))
+        state = state * mixing_param + tn_state * (1 - mixing_param)
+        action = action * mixing_param + tn_action * (1 - mixing_param)
+        reward = reward.squeeze() * mixing_param.squeeze() + tn_reward.squeeze() * (1 - mixing_param).squeeze()
+        delta_state = delta_state * mixing_param + tn_delta_state * (1 - mixing_param)
+        next_state = state + delta_state
+
+        done = termination_fn(self.env_name, state, action, next_state)
+        mask = np.invert(done).astype(float).squeeze()
+
+        for n in range(len(state)):
+            self.push_v(state[n], action[n], float(reward[n]), next_state[n], float(mask[n]))
 
     def push_v(self, state, action, reward, next_state, done):
         self.v_buffer.push(state, action, reward, next_state, done)

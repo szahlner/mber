@@ -200,7 +200,6 @@ else:
         memory = PerReplayMemory(args.replay_size, args.seed, state_dim=state_size, action_dim=action_size)
     elif args.slapp:
         from utils.replay_memory import SimpleLocalApproximationReplayMemory
-        from utils.utils import get_neighboring_states
         state_size = np.prod(env.observation_space.shape)
         action_size = np.prod(env.action_space.shape)
         memory = SimpleLocalApproximationReplayMemory(args.replay_size, args.seed,
@@ -241,7 +240,7 @@ while total_numsteps < args.start_steps:
         state, action, reward, next_state, mask = episode_trajectory[t]
         memory.push(state, action, reward, next_state, mask)  # Append transition to memory
 
-if args.nmer:
+if args.nmer or args.slapp:
     memory.update_neighbours()
 
 # Training Loop
@@ -295,24 +294,7 @@ for i_episode in itertools.count(1):
                 memory.update_v_neighbours()
 
         if args.slapp and total_numsteps % args.update_env_model == 0:
-            # Resize buffer capacity
-            current_epoch = int(total_numsteps / args.epoch_length)
-            memory.set_rollout_length(current_epoch)
-            memory.resize_v_memory()
-
-            # Rollout the environment model
-            o, _, _, _, _ = memory.sample_r(batch_size=args.n_rollout_samples)
-
-            for n in range(memory.rollout_length):
-                a = agent.select_action(o)
-                r, o_2, d = get_neighboring_states(memory, o, a, args.env_name)
-                # Push into memory
-                for k in range(len(o)):
-                    memory.push_v(o[k], a[k], float(r[k]), o_2[k], float(not d[k]))
-                nonterm_mask = ~d.squeeze(-1)
-                if nonterm_mask.sum() == 0:
-                    break
-                o = o_2[nonterm_mask]
+            memory.prepare_v_memory()
 
         if len(memory) > args.batch_size:
             # Number of updates per step in environment
@@ -374,7 +356,7 @@ for i_episode in itertools.count(1):
         state, action, reward, next_state, mask = episode_trajectory[t]
         memory.push(state, action, reward, next_state, mask)  # Append transition to memory
 
-    if args.nmer:
+    if args.nmer or args.slapp:
         memory.update_neighbours()
 
     writer.add_scalar('reward/train_timesteps', episode_reward, total_numsteps)
