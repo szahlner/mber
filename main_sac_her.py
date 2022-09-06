@@ -110,7 +110,7 @@ def main(args):
 
             if args.her:
                 for _ in range(args.her_replay_k):
-                    future_idx = random.randint(t, steps_taken)  # index of future time step
+                    future_idx = random.randint(t, steps_taken - 1)  # index of future time step
                     goal_new = episode_trajectory[future_idx].next_state["achieved_goal"]  # take future next_state achieved goal and set as goal
                     reward_new = env.compute_reward(next_state_["achieved_goal"], goal_new, info=None)
                     state = np.concatenate((state_["observation"], goal_new), axis=-1)
@@ -202,7 +202,7 @@ def main(args):
 
             if args.her:
                 for _ in range(args.replay_k):
-                    future_idx = random.randint(t, steps_taken)  # index of future time step
+                    future_idx = random.randint(t, steps_taken - 1)  # index of future time step
                     goal_new = episode_trajectory[future_idx].next_state["achieved_goal"]  # take future next_state achieved goal and set as goal
                     reward_new = env.compute_reward(next_state_["achieved_goal"], goal_new, info=None)
                     state = np.concatenate((state_["observation"], goal_new), axis=-1)
