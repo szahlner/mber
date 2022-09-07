@@ -6,7 +6,7 @@ from utils.utils import termination_fn
 from utils.segment_tree import MinSegmentTree, SumSegmentTree
 from sklearn.preprocessing import StandardScaler
 from sklearn.neighbors import NearestNeighbors
-from scipy.spatial import Delaunay
+from scipy.spatial import ConvexHull, Delaunay
 from sklearn.decomposition import PCA
 
 
@@ -26,6 +26,48 @@ class ReplayMemory:
     def sample(self, batch_size):
         batch = random.sample(self.buffer, batch_size)
         state, action, reward, next_state, done = map(np.stack, zip(*batch))
+        return state, action, reward, next_state, done
+
+    def __len__(self):
+        return len(self.buffer)
+
+    def save_buffer(self, env_name, suffix="", save_path=None):
+        if not os.path.exists('checkpoints/'):
+            os.makedirs('checkpoints/')
+
+        if save_path is None:
+            save_path = "checkpoints/sac_buffer_{}_{}".format(env_name, suffix)
+        print('Saving buffer to {}'.format(save_path))
+
+        with open(save_path, 'wb') as f:
+            pickle.dump(self.buffer, f)
+
+    def load_buffer(self, save_path):
+        print('Loading buffer from {}'.format(save_path))
+
+        with open(save_path, "rb") as f:
+            self.buffer = pickle.load(f)
+            self.position = len(self.buffer) % self.capacity
+
+
+class HerReplayMemory:
+    def __init__(self, capacity, seed):
+        random.seed(seed)
+        self.capacity = capacity
+        self.buffer = []
+        self.position = 0
+
+    def push(self, state, state_ag, state_g, action, reward, next_state, next_state_ag, next_state_g, done):
+        if len(self.buffer) < self.capacity:
+            self.buffer.append(None)
+        self.buffer[self.position] = (state, state_ag, state_g, action, reward, next_state, next_state_ag, next_state_g, done)
+        self.position = (self.position + 1) % self.capacity
+
+    def sample(self, batch_size):
+        batch = random.sample(self.buffer, batch_size)
+        state_, _, state_g, action, reward, next_state_, _, next_state_g, done = map(np.stack, zip(*batch))
+        state = np.concatenate((state_, state_g), axis=-1)
+        next_state = np.concatenate((next_state_, next_state_g), axis=-1)
         return state, action, reward, next_state, done
 
     def __len__(self):
@@ -130,6 +172,108 @@ class MbpoReplayMemory(ReplayMemory):
             v_state, v_action, v_reward, v_next_state, v_done = self.sample_v(batch_size=v_batch_size)
         else:
             state, action, reward, next_state, done = self.sample_r(batch_size=batch_size)
+            return state, action, reward, next_state, done
+
+        state = np.concatenate((state, v_state), axis=0)
+        action = np.concatenate((action, v_action), axis=0)
+        reward = np.concatenate((reward, v_reward), axis=0)
+        next_state = np.concatenate((next_state, v_next_state), axis=0)
+        done = np.concatenate((done, v_done), axis=0)
+
+        return state, action, reward, next_state, done
+
+
+class MbpoHerReplayMemory(HerReplayMemory):
+    def __init__(self, capacity, seed, v_capacity=None, v_ratio=1.0, env_name="Hopper-v2", args=None):
+        super().__init__(capacity, seed)
+
+        assert args is not None, "args must not be None"
+
+        if v_capacity is None:
+            self.v_capacity = capacity
+        else:
+            self.v_capacity = v_capacity
+        self.v_buffer = []
+        self.v_position = 0
+
+        # MBPO settings
+        self.args = args
+        self.rollout_length = 1  # always start with 1
+        self.v_ratio = v_ratio
+        self.env_name = env_name
+
+    def set_rollout_length(self, current_epoch):
+        self.rollout_length = int(
+            min(
+                max(
+                    self.args.rollout_min_length + (current_epoch - self.args.rollout_min_epoch) / (self.args.rollout_max_epoch - self.args.rollout_min_epoch) * (self.args.rollout_max_length - self.args.rollout_min_length),
+                    self.args.rollout_min_length
+                ),
+                self.args.rollout_max_length
+            )
+        )
+
+    def resize_v_memory(self):
+        rollouts_per_epoch = self.args.n_rollout_samples * self.args.epoch_length / self.args.update_env_model
+        model_steps_per_epoch = int(self.rollout_length * rollouts_per_epoch)
+        self.v_capacity = self.args.model_retain_epochs * model_steps_per_epoch * (1 + self.args.her_replay_k)
+
+        state, state_ag, state_g, action, reward, next_state, next_state_ag, next_state_g, done = map(np.stack, zip(*self.buffer))
+        self.v_buffer = []
+        self.v_position = 0
+
+        for n in range(len(state)):
+            self.push_v(state[n], state_ag[n], state_g[n], action[n], float(reward[n]), next_state[n], next_state_ag[n], next_state_g[n], float(done[n]))
+
+    def push_v(self, state, state_ag, state_g, action, reward, next_state, next_state_ag, next_state_g, done):
+        if len(self.v_buffer) < self.v_capacity:
+            self.v_buffer.append(None)
+        self.v_buffer[self.v_position] = (state, state_ag, state_g, action, reward, next_state, next_state_ag, next_state_g, done)
+        self.v_position = (self.v_position + 1) % self.v_capacity
+
+    def sample_r(self, batch_size):
+        if batch_size < len(self.buffer):
+            batch = random.sample(self.buffer, batch_size)
+            state, state_ag, state_g, action, reward, next_state, next_state_ag, next_state_g, done = map(np.stack, zip(*batch))
+            return state, state_ag, state_g, action, reward, next_state, next_state_ag, next_state_g, done
+        else:
+            sample_indices = np.random.randint(len(self.buffer), size=batch_size)
+            state, state_ag, state_g, action, reward, next_state, next_state_ag, next_state_g, done = map(np.stack, zip(*[self.buffer[n] for n in sample_indices]))
+        return state, state_ag, state_g, action, reward, next_state, next_state_ag, next_state_g, done
+
+    def sample_v(self, batch_size):
+        batch = random.sample(self.v_buffer, batch_size)
+        state, state_ag, state_g, action, reward, next_state, next_state_ag, next_state_g, done = map(np.stack, zip(*batch))
+        return state, state_ag, state_g, action, reward, next_state, next_state_ag, next_state_g, done
+
+    def sample(self, batch_size):
+        if len(self.v_buffer) > 0:
+            v_batch_size = int(self.v_ratio * batch_size)
+            batch_size = batch_size - v_batch_size
+
+            if batch_size == 0:
+                v_state_, _, v_state_g, v_action, v_reward, v_next_state_, _, v_next_state_g, v_done = self.sample_v(batch_size=v_batch_size)
+                v_state = np.concatenate((v_state_, v_state_g), axis=-1)
+                v_next_state = np.concatenate((v_next_state_, v_next_state_g), axis=-1)
+                return v_state, v_action, v_reward, v_next_state, v_done
+
+            if v_batch_size == 0:
+                state_, _, state_g, action, reward, next_state_, _, next_state_g, done = self.sample_r(batch_size=batch_size)
+                state = np.concatenate((state_, state_g), axis=-1)
+                next_state = np.concatenate((next_state_, next_state_g), axis=-1)
+                return state, action, reward, next_state, done
+
+            state_, _, state_g, action, reward, next_state_, _, next_state_g, done = self.sample_r(batch_size=batch_size)
+            state = np.concatenate((state_, state_g), axis=-1)
+            next_state = np.concatenate((next_state_, next_state_g), axis=-1)
+
+            v_state_, _, v_state_g, v_action, v_reward, v_next_state_, _, v_next_state_g, v_done = self.sample_v(batch_size=v_batch_size)
+            v_state = np.concatenate((v_state_, v_state_g), axis=-1)
+            v_next_state = np.concatenate((v_next_state_, v_next_state_g), axis=-1)
+        else:
+            state_, _, state_g, action, reward, next_state_, _, next_state_g, done = self.sample_r(batch_size=batch_size)
+            state = np.concatenate((state_, state_g), axis=-1)
+            next_state = np.concatenate((next_state_, next_state_g), axis=-1)
             return state, action, reward, next_state, done
 
         state = np.concatenate((state, v_state), axis=0)
@@ -529,9 +673,9 @@ class SimpleLocalApproximationReplayMemory(BaseReplayMemory):
         self.use_pca = True if state_dim + action_dim > self.max_delaunay_dim else False
         if self.use_pca:
             self.pca = PCA(n_components=self.delaunay_dim)
-        self.buffer["pca"] = np.empty(shape=(capacity, self.delaunay_dim))
         self.k_neighbors = k_neighbors
         self.delaunay = None
+        self.convex_hull = None
         self.nn_indices = None
 
     def update_neighbours(self):
@@ -542,14 +686,43 @@ class SimpleLocalApproximationReplayMemory(BaseReplayMemory):
         z_space = np.concatenate((state, action), axis=-1)
         if self.use_pca:
             z_space = self.pca.fit_transform(z_space)
-            self.delaunay = None
+            self.convex_hull = None
 
-        if self.delaunay is None and not self.use_pca:
-            self.delaunay = Delaunay(z_space, incremental=True)
-        elif self.delaunay is None and self.use_pca:
-            self.delaunay = Delaunay(z_space)
+        if self.convex_hull is None and not self.use_pca:
+            self.convex_hull = ConvexHull(z_space, incremental=True)
+            self.delaunay = Delaunay(z_space[self.convex_hull.vertices], incremental=True)
+        elif self.convex_hull is None and self.use_pca:
+            self.convex_hull = ConvexHull(z_space)
+            self.delaunay = Delaunay(z_space[self.convex_hull.vertices])
         else:
-            self.delaunay.add_points(z_space)
+            self.convex_hull.add_points(z_space)
+            self.delaunay.add_points(z_space[self.convex_hull.vertices])
+
+        import matplotlib.pyplot as plt
+        from mpl_toolkits.mplot3d import Axes3D
+
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection="3d")
+
+        # Plot defining corner points
+        ax.plot(z_space.T[0], z_space.T[1], z_space.T[2], "ko")
+
+        # 12 = 2 * 6 faces are the simplices (2 simplices per square face)
+        for s in self.convex_hull.simplices:
+            s = np.append(s, s[0])  # Here we cycle back to the first coordinate
+            ax.plot(z_space[s, 0], z_space[s, 1], z_space[s, 2], "r-")
+
+        # Make axis label
+        for i in ["x", "y", "z"]:
+            eval("ax.set_{:s}label('{:s}')".format(i, i))
+
+        plt.show()
+
+        import pyvista
+        pdata = pyvista.PolyData(z_space)
+        surf = pdata.triangulate().extract_surface()
+        surf = surf.decimate_pro(0.75)  # reduce the density of the mesh by 75%
+        surf.plot(cmap='gist_earth')
 
         index_pointers, indices = self.delaunay.vertex_neighbor_vertices
         self.nn_indices = np.ones(shape=(self.position, self.k_neighbors), dtype=int) * -1

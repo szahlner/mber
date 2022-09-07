@@ -120,6 +120,31 @@ def get_predicted_states(model, state, action, env_name, deterministic=False):
     return new_reward, new_next_state, new_done
 
 
+def get_predicted_states_her(model, state, state_ag, state_g, action, env, env_params, deterministic=False):
+    inputs = np.concatenate((state, state_ag, action), axis=-1)
+
+    ensemble_model_means, ensemble_model_vars = model.predict(inputs)
+    ensemble_model_means += np.concatenate((state, state_ag), axis=-1)
+
+    if deterministic:
+        ensemble_samples = ensemble_model_means
+    else:
+        ensemble_model_stds = np.sqrt(ensemble_model_vars)
+        ensemble_samples = ensemble_model_means + np.random.normal(size=ensemble_model_means.shape) * ensemble_model_stds
+
+    num_models, batch_size, _ = ensemble_model_means.shape
+    model_idxes = np.random.choice(model.elite_model_idxes, size=batch_size)
+    batch_idxes = np.arange(0, batch_size)
+
+    samples = ensemble_samples[model_idxes, batch_idxes]
+    new_next_state, new_next_state_ag = samples[:, :env_params["obs"]], samples[:, env_params["obs"]:]
+
+    new_reward = env.compute_reward(new_next_state_ag, state_g, info=None)
+    new_done = np.zeros_like(new_reward, dtype=bool)
+
+    return new_reward[:, None], new_next_state, new_next_state_ag, new_done[:, None]
+
+
 def get_env_params(env):
     obs = env.reset()
 
