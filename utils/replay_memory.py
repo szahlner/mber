@@ -651,7 +651,7 @@ class PerNmerReplayMemory(PerReplayMemory):
 
 class SimpleLocalApproximationReplayMemory(BaseReplayMemory):
     def __init__(self, capacity, seed, state_dim, action_dim,
-                 v_capacity=None, v_ratio=1.0, env_name="Hopper-v2", k_neighbors=7, args=None):
+                 v_capacity=None, v_ratio=0.95, env_name="Hopper-v2", args=None):
         super().__init__(capacity, seed, state_dim=state_dim, action_dim=action_dim)
 
         assert args is not None, "args must not be None"
@@ -667,107 +667,6 @@ class SimpleLocalApproximationReplayMemory(BaseReplayMemory):
         self.args = args
         self.rollout_length = 0
         self.seed = seed
-
-        self.max_delaunay_dim = 3
-        self.delaunay_dim = min(state_dim + action_dim, self.max_delaunay_dim)
-        self.use_pca = True if state_dim + action_dim > self.max_delaunay_dim else False
-        if self.use_pca:
-            self.pca = PCA(n_components=self.delaunay_dim)
-        self.k_neighbors = k_neighbors
-        self.delaunay = None
-        self.convex_hull = None
-        self.nn_indices = None
-
-    def update_neighbours(self):
-        # Get whole buffer
-        state, action = self.buffer["state"][:self.position], self.buffer["action"][:self.position]
-
-        # Construct Z-space
-        z_space = np.concatenate((state, action), axis=-1)
-        if self.use_pca:
-            z_space = self.pca.fit_transform(z_space)
-            self.convex_hull = None
-
-        if self.convex_hull is None and not self.use_pca:
-            self.convex_hull = ConvexHull(z_space, incremental=True)
-            self.delaunay = Delaunay(z_space[self.convex_hull.vertices], incremental=True)
-        elif self.convex_hull is None and self.use_pca:
-            self.convex_hull = ConvexHull(z_space)
-            self.delaunay = Delaunay(z_space[self.convex_hull.vertices])
-        else:
-            self.convex_hull.add_points(z_space)
-            self.delaunay.add_points(z_space[self.convex_hull.vertices])
-
-        import matplotlib.pyplot as plt
-        from mpl_toolkits.mplot3d import Axes3D
-
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection="3d")
-
-        # Plot defining corner points
-        ax.plot(z_space.T[0], z_space.T[1], z_space.T[2], "ko")
-
-        # 12 = 2 * 6 faces are the simplices (2 simplices per square face)
-        for s in self.convex_hull.simplices:
-            s = np.append(s, s[0])  # Here we cycle back to the first coordinate
-            ax.plot(z_space[s, 0], z_space[s, 1], z_space[s, 2], "r-")
-
-        # Make axis label
-        for i in ["x", "y", "z"]:
-            eval("ax.set_{:s}label('{:s}')".format(i, i))
-
-        plt.show()
-
-        import pyvista
-        pdata = pyvista.PolyData(z_space)
-        surf = pdata.triangulate().extract_surface()
-        surf = surf.decimate_pro(0.75)  # reduce the density of the mesh by 75%
-        surf.plot(cmap='gist_earth')
-
-        index_pointers, indices = self.delaunay.vertex_neighbor_vertices
-        self.nn_indices = np.ones(shape=(self.position, self.k_neighbors), dtype=int) * -1
-        for n in range(self.position):
-            result_ids = indices[index_pointers[n]:index_pointers[n + 1]]
-            k = min(len(result_ids), self.k_neighbors)
-            self.nn_indices[n, :k] = result_ids[:k]
-
-    def prepare_v_memory(self):
-        self.update_neighbours()
-
-        sample_indices = np.random.randint(len(self), size=self.v_capacity)
-        nn_indices = self.nn_indices[sample_indices]
-
-        # Remove itself, shuffle and chose
-        indices = np.random.rand(*nn_indices.shape).argsort(axis=1)
-        nn_indices = np.take_along_axis(nn_indices, indices, axis=1)
-        nn_indices = nn_indices[:, 0]
-
-        # Actually sample
-        state, action = self.buffer["state"][sample_indices], self.buffer["action"][sample_indices]
-        next_state, reward = self.buffer["next_state"][sample_indices], self.buffer["reward"][sample_indices]
-
-        tn_state, tn_action = self.buffer["state"][nn_indices], self.buffer["action"][nn_indices]
-        tn_next_state, tn_reward = self.buffer["next_state"][nn_indices], self.buffer["reward"][nn_indices]
-
-        delta_state = (next_state - state).copy()
-        tn_delta_state = (tn_next_state - tn_state).copy()
-
-        # Linearly interpolate sample and neighbor points
-        mixing_param = np.random.uniform(size=(len(state), 1))
-        state = state * mixing_param + tn_state * (1 - mixing_param)
-        action = action * mixing_param + tn_action * (1 - mixing_param)
-        reward = reward.squeeze() * mixing_param.squeeze() + tn_reward.squeeze() * (1 - mixing_param).squeeze()
-        delta_state = delta_state * mixing_param + tn_delta_state * (1 - mixing_param)
-        next_state = state + delta_state
-
-        done = termination_fn(self.env_name, state, action, next_state)
-        mask = np.invert(done).astype(float).squeeze()
-
-        for n in range(len(state)):
-            self.push_v(state[n], action[n], float(reward[n]), next_state[n], float(mask[n]))
-
-    def push_v(self, state, action, reward, next_state, done):
-        self.v_buffer.push(state, action, reward, next_state, done)
 
     def sample_v(self, batch_size):
         return self.v_buffer.sample(batch_size=batch_size)
@@ -792,7 +691,7 @@ class SimpleLocalApproximationReplayMemory(BaseReplayMemory):
             v_state, v_action, v_reward, v_next_state, v_done = self.sample_v(batch_size=v_batch_size)
         else:
             state, action, reward, next_state, done = self.sample_r(batch_size=batch_size)
-            return state, action, reward, next_state, done
+            return state, action, reward.squeeze(), next_state, done.squeeze()
 
         state = np.concatenate((state, v_state), axis=0)
         action = np.concatenate((action, v_action), axis=0)
