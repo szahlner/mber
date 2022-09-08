@@ -657,7 +657,7 @@ class SimpleLocalApproximationReplayMemory(BaseReplayMemory):
         assert args is not None, "args must not be None"
 
         if v_capacity is None:
-            self.v_capacity = args.updates_per_step * args.update_env_model
+            self.v_capacity = args.updates_per_step * args.epoch_length
         else:
             self.v_capacity = v_capacity
         self.v_buffer = BaseReplayMemory(self.v_capacity, seed, state_dim, action_dim)
@@ -667,6 +667,9 @@ class SimpleLocalApproximationReplayMemory(BaseReplayMemory):
         self.args = args
         self.rollout_length = 0
         self.seed = seed
+
+    def push_v(self, state, action, reward, next_state, done):
+        self.v_buffer.push(state, action, reward, next_state, done)
 
     def sample_v(self, batch_size):
         return self.v_buffer.sample(batch_size=batch_size)
@@ -681,11 +684,11 @@ class SimpleLocalApproximationReplayMemory(BaseReplayMemory):
 
             if batch_size == 0:
                 v_state, v_action, v_reward, v_next_state, v_done = self.sample_v(batch_size=v_batch_size)
-                return v_state, v_action, v_reward, v_next_state, v_done
+                return v_state, v_action, v_reward.squeeze(), v_next_state, v_done.squeeze()
 
             if v_batch_size == 0:
                 state, action, reward, next_state, done = self.sample_r(batch_size=batch_size)
-                return state, action, reward, next_state, done
+                return state, action, reward.squeeze(), next_state, done.squeeze()
 
             state, action, reward, next_state, done = self.sample_r(batch_size=batch_size)
             v_state, v_action, v_reward, v_next_state, v_done = self.sample_v(batch_size=v_batch_size)

@@ -181,8 +181,8 @@ def main(args):
             pca = PCA(n_components=n_components, random_state=args.seed)
             z_space = pca.fit_transform(z_space)
 
-            k = int(1 / (1 - args.v_ratio))  # interpolated points
-            n_points = (len(z_space) - 1)
+            k = args.updates_per_step  # interpolated points
+            n_points = len(z_space) - 1
             z_space_interpolated = np.empty(shape=(n_points * k, n_components))
             for n in range(n_points):
                 diff = (z_space[n + 1] - z_space[n]) / (k + 1)
@@ -195,7 +195,7 @@ def main(args):
             d = termination_fn(args.env_name, o, a, o_2)
 
             for t in range(len(o)):
-                memory.push(o[t], a[t], float(r[t]), o_2[t], float(not d[t]))  # Append transition to memory
+                memory.push_v(o[t], a[t], float(r[t]), o_2[t], float(not d[t]))  # Append transition to memory
 
     if args.nmer:
         memory.update_neighbours()
@@ -322,8 +322,8 @@ def main(args):
             pca = PCA(n_components=n_components, random_state=args.seed)
             z_space = pca.fit_transform(z_space)
 
-            k = int(1 / (1 - args.v_ratio))  # interpolated points
-            n_points = (len(z_space) - 1)
+            k = args.updates_per_step  # interpolated points
+            n_points = len(z_space) - 1
             z_space_interpolated = np.empty(shape=(n_points * k, n_components))
             for n in range(n_points):
                 diff = (z_space[n + 1] - z_space[n]) / (k + 1)
@@ -336,7 +336,7 @@ def main(args):
             d = termination_fn(args.env_name, o, a, o_2)
 
             for t in range(len(o)):
-                memory.push(o[t], a[t], float(r[t]), o_2[t], float(not d[t]))  # Append transition to memory
+                memory.push_v(o[t], a[t], float(r[t]), o_2[t], float(not d[t]))  # Append transition to memory
 
         if args.nmer:
             memory.update_neighbours()
@@ -395,7 +395,7 @@ if __name__ == "__main__":
                         help='run on CUDA (default: False)')
     parser.add_argument('--model-based', action="store_true",
                         help='use Model-based (default: False)')
-    parser.add_argument('--v-ratio', type=float, default=1.0, metavar='N',
+    parser.add_argument('--v-ratio', type=float, default=0.95, metavar='N',
                         help='virtual ratio (default: 1.0)')
     parser.add_argument('--eval-timesteps', type=int, default=1000, metavar='N',
                         help='when to eval the policy (default: 1000)')
