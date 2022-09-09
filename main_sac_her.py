@@ -104,8 +104,13 @@ def main(args):
         from utils.replay_memory import MbpoHerReplayMemory
         memory = MbpoHerReplayMemory(args.replay_size, args.seed, v_ratio=args.v_ratio, env_name=args.env_name, args=args)
     else:
-        from utils.replay_memory import HerReplayMemory
-        memory = HerReplayMemory(args.replay_size, args.seed)
+        if args.her_2:
+            from utils.her.replay_memory import HerSampler, HerReplayMemory
+            sampler = HerSampler("future", args.her_replay_k, env.compute_reward)
+            memory = HerReplayMemory(env_params, args.replay_size, sample_func=sampler.sample_her_transitions)
+        else:
+            from utils.replay_memory import HerReplayMemory
+            memory = HerReplayMemory(args.replay_size, args.seed)
 
     # Exploration Loop
     total_numsteps = 0
@@ -134,13 +139,20 @@ def main(args):
         # Fill up replay memory
         steps_taken = len(episode_trajectory)
 
+        if args.her_2:
+            o, ag, g, a = [], [], [], []
+
         # Normal experience replay
         for t in range(steps_taken):
             state, action, reward, next_state, mask = episode_trajectory[t]
             # Append transition to memory
-            memory.push(state=state["observation"], state_ag=state["achieved_goal"], state_g=state["desired_goal"],
-                        action=action, reward=reward, done=mask, next_state=next_state["observation"],
-                        next_state_ag=next_state["achieved_goal"], next_state_g=next_state["desired_goal"])
+            if args.her_2:
+                o.append(state["observation"]), ag.append(state["achieved_goal"])
+                g.append(state["desired_goal"]), a.append(action)
+            else:
+                memory.push(state=state["observation"], state_ag=state["achieved_goal"], state_g=state["desired_goal"],
+                            action=action, reward=reward, done=mask, next_state=next_state["observation"],
+                            next_state_ag=next_state["achieved_goal"], next_state_g=next_state["desired_goal"])
 
             if args.her:
                 for _ in range(args.her_replay_k):
@@ -153,6 +165,11 @@ def main(args):
                     memory.push(state=state["observation"], state_ag=state["achieved_goal"], state_g=goal_new,
                                 action=action, reward=reward_new, done=1.0, next_state=next_state["observation"],
                                 next_state_ag=next_state["achieved_goal"], next_state_g=goal_new)
+
+        if args.her_2:
+            o.append(next_state["observation"]), ag.append(next_state["achieved_goal"])
+            o, ag, g, a = np.array(o), np.array(ag), np.array(g), np.array(a)
+            memory.push_episode([o, ag, g, a])
 
     # Training Loop
     total_numsteps = 0
@@ -167,7 +184,12 @@ def main(args):
         time_start = time.time()
 
         while not done:
-            state_ = np.concatenate((state["observation"], state["desired_goal"]), axis=-1)
+            if args.her_2:
+                state_norm = memory.o_norm.normalize(state["observation"])
+                goal_norm = memory.g_norm.normalize(state["desired_goal"])
+                state_ = np.concatenate((state_norm, goal_norm), axis=-1)
+            else:
+                state_ = np.concatenate((state["observation"], state["desired_goal"]), axis=-1)
             action = agent.select_action(state_)  # Sample action from policy
 
             if args.model_based and total_numsteps % args.update_env_model == 0:
@@ -243,7 +265,7 @@ def main(args):
                                               next_state=v_next_state[k][t], next_state_ag=v_next_state_ag[k][t],
                                               next_state_g=goal_new[k])
 
-            if len(memory) > args.batch_size:
+            if len(memory) > args.batch_size and args.updates_per_step > 0:
                 # Number of updates per step in environment
                 for i in range(args.updates_per_step):
                     # Update parameters of all the networks
@@ -278,7 +300,12 @@ def main(args):
                     done_eval = False
                     per_success_rate = []
                     while not done_eval:
-                        state_eval_ = np.concatenate((state_eval["observation"], state_eval["desired_goal"]), axis=-1)
+                        if args.her_2:
+                            state_norm = memory.o_norm.normalize(state_eval["observation"])
+                            goal_norm = memory.g_norm.normalize(state_eval["desired_goal"])
+                            state_eval_ = np.concatenate((state_norm, goal_norm), axis=-1)
+                        else:
+                            state_eval_ = np.concatenate((state_eval["observation"], state_eval["desired_goal"]), axis=-1)
                         action_eval = agent.select_action(state_eval_, evaluate=True)
 
                         next_state_eval, reward_eval, done_eval, info = eval_env.step(action_eval)
@@ -303,13 +330,20 @@ def main(args):
         # Fill up replay memory
         steps_taken = len(episode_trajectory)
 
+        if args.her_2:
+            o, ag, g, a = [], [], [], []
+
         # Normal experience replay
         for t in range(steps_taken):
             state, action, reward, next_state, mask = episode_trajectory[t]
             # Append transition to memory
-            memory.push(state=state["observation"], state_ag=state["achieved_goal"], state_g=state["desired_goal"],
-                        action=action, reward=reward, done=mask, next_state=next_state["observation"],
-                        next_state_ag=next_state["achieved_goal"], next_state_g=next_state["desired_goal"])
+            if args.her_2:
+                o.append(state["observation"]), ag.append(state["achieved_goal"])
+                g.append(state["desired_goal"]), a.append(action)
+            else:
+                memory.push(state=state["observation"], state_ag=state["achieved_goal"], state_g=state["desired_goal"],
+                            action=action, reward=reward, done=mask, next_state=next_state["observation"],
+                            next_state_ag=next_state["achieved_goal"], next_state_g=next_state["desired_goal"])
 
             if args.her:
                 for _ in range(args.her_replay_k):
@@ -322,6 +356,25 @@ def main(args):
                     memory.push(state=state["observation"], state_ag=state["achieved_goal"], state_g=goal_new,
                                 action=action, reward=reward_new, done=1.0, next_state=next_state["observation"],
                                 next_state_ag=next_state["achieved_goal"], next_state_g=goal_new)
+
+        if args.her_2:
+            o.append(next_state["observation"]), ag.append(next_state["achieved_goal"])
+            o, ag, g, a = np.array(o), np.array(ag), np.array(g), np.array(a)
+            memory.push_episode([o, ag, g, a])
+
+        if len(memory) > args.batch_size and args.n_update_batches > 0:
+            # Number of updates per step in environment
+            for i in range(args.n_update_batches):
+                # Update parameters of all the networks
+                critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters(memory,
+                                                                                                     args.batch_size,
+                                                                                                     updates)
+                updates += 1
+            writer.add_scalar('loss/critic_1', critic_1_loss, updates)
+            writer.add_scalar('loss/critic_2', critic_2_loss, updates)
+            writer.add_scalar('loss/policy', policy_loss, updates)
+            writer.add_scalar('loss/entropy_loss', ent_loss, updates)
+            writer.add_scalar('entropy_temprature/alpha', alpha, updates)
 
         writer.add_scalar('reward/train_timesteps', episode_reward, total_numsteps)
         print("Episode: {}, total numsteps: {}, episode steps: {}, reward: {}, time/step: {}s".format(i_episode,
@@ -415,7 +468,14 @@ if __name__ == "__main__":
                         help='replay k to use (default: 4)')
     parser.add_argument('--her', action="store_true",
                         help='use HER (default: False)')
+    parser.add_argument('--her-2', action="store_true",
+                        help='use HER 2 (default: False)')
+    parser.add_argument('--n-update-batches', type=int, default=20,
+                        help='updates per rollout (default: 20)')
 
     args = parser.parse_args()
+
+    assert args.updates_per_step > 0 and args.n_update_batches == 0 or \
+           args.updates_per_step == 0 and args.n_update_batches > 0, "One of --updates-per-step or --n-update-batches must be zero (0)"
 
     main(args)
