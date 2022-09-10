@@ -12,29 +12,29 @@ rollout_max_length=3
 # FetchReach-v1 UTD 1
 for seed in 123 456 789
 do
-  python main_sac_her.py --env-name $env_name --num-steps $num_steps --start-steps $start_steps --n-update-batches 20 --seed $seed
+  python main_sac_her.py --env-name $env_name --num-steps $num_steps --start-steps $start_steps --n-update-batches 20 --seed $seed --eval-timesteps 500
 done
 
 # FetchReach-v1 UTD 20
 for seed in 123 456 789
 do
-  python main_sac_her.py --env-name $env_name --num-steps $num_steps --start-steps $start_steps --n-update-batches $n_update_batches --seed $seed
+  python main_sac_her.py --env-name $env_name --num-steps $num_steps --start-steps $start_steps --n-update-batches $n_update_batches --seed $seed --eval-timesteps 500
 done
 
 # FetchReach-v1 HER UTD 1
 for seed in 123 456 789
 do
-  python main_sac_her.py --env-name $env_name --num-steps $num_steps --her --her-normalize --start-steps $start_steps --n-update-batches 20 --seed $seed
+  python main_sac_her.py --env-name $env_name --num-steps $num_steps --her --her-normalize --start-steps $start_steps --n-update-batches 20 --seed $seed --eval-timesteps 500
 done
 
 # FetchReach-v1 HER UTD 20
 for seed in 123 456 789
 do
-  python main_sac_her.py --env-name $env_name --num-steps $num_steps --her --her-normalize --start-steps $start_steps --n-update-batches $n_update_batches --seed $seed
+  python main_sac_her.py --env-name $env_name --num-steps $num_steps --her --her-normalize --start-steps $start_steps --n-update-batches $n_update_batches --seed $seed --eval-timesteps 500
 done
 
 # FetchReach-v1 HER MBPO UTD 20
 for seed in 123 456 789
 do
-  python main_sac_her.py --env-name $env_name --num-steps $num_steps --her --her-normalize --model-based --start-steps $start_steps --n-update-batches $n_update_batches --v-ratio 0.95 --rollout-min-epoch $rollout_min_epoch --rollout-max-epoch $rollout_max_epoch --rollout-min-length $rollout_min_length --rollout-max-length $rollout_max_length --seed $seed
+  python main_sac_her.py --env-name $env_name --num-steps $num_steps --her --her-normalize --model-based --start-steps $start_steps --n-update-batches $n_update_batches --v-ratio 0.95 --rollout-min-epoch $rollout_min_epoch --rollout-max-epoch $rollout_max_epoch --rollout-min-length $rollout_min_length --rollout-max-length $rollout_max_length --seed $seed --eval-timesteps 500
 done
