@@ -112,10 +112,11 @@ class HerSampler:
 
 
 class HerReplayMemory:
-    def __init__(self, env_params, buffer_size, sample_func):
+    def __init__(self, env_params, buffer_size, sample_func, normalize=True):
         self.env_params = env_params
         self.T = env_params["max_timesteps"]
         self.size = buffer_size // self.T
+        self.normalize = normalize
 
         # Memory management
         self.current_size = 0
@@ -134,8 +135,9 @@ class HerReplayMemory:
         self.lock = threading.Lock()
 
         # Normalizer
-        self.o_norm = Normalizer(self.env_params["obs"])
-        self.g_norm = Normalizer(self.env_params["goal"])
+        if self.normalize:
+            self.o_norm = Normalizer(self.env_params["obs"])
+            self.g_norm = Normalizer(self.env_params["goal"])
 
     def __len__(self):
         return self.n_transitions_stored
@@ -155,7 +157,6 @@ class HerReplayMemory:
                        'ag_next': mb_ag_next[None,:],
                        }
         transitions = self.sample_func(buffer_temp, num_transitions)
-        obs, g = transitions['obs'], transitions['g']
         # pre-process the obs and g
         # update
         self.o_norm.update(transitions['obs'])
@@ -169,7 +170,8 @@ class HerReplayMemory:
         mb_obs, mb_ag, mb_g, mb_actions = episode_batch
         batch_size = mb_obs.shape[0]
 
-        self._update_normalizer(episode_batch)
+        if self.normalize:
+            self._update_normalizer(episode_batch)
 
         with self.lock:
             idxs = self._get_storage_idx(inc=batch_size)
@@ -195,8 +197,11 @@ class HerReplayMemory:
         # Sample transitions
         transitions = self.sample_func(temp_buffers, batch_size)
 
-        o, g = self.o_norm.normalize(transitions["obs"]), self.g_norm.normalize(transitions["g"])
-        o_2 = self.o_norm.normalize(transitions["obs_next"])
+        if self.normalize:
+            o, g = self.o_norm.normalize(transitions["obs"]), self.g_norm.normalize(transitions["g"])
+            o_2 = self.o_norm.normalize(transitions["obs_next"])
+        else:
+            o, g, o_2 = transitions["obs"], transitions["g"], transitions["obs_next"]
         obs = np.concatenate((o, g), axis=-1)
         actions, rewards = transitions["actions"], transitions["r"].squeeze()
         obs_next = np.concatenate((o_2, g), axis=-1)
@@ -225,6 +230,116 @@ class HerReplayMemory:
         return idx
 
 
+class HerMbpoReplayMemory(HerReplayMemory):
+    def __init__(self, env_params, buffer_size, sample_func, v_ratio=0.95, normalize=True, args=None):
+        super().__init__(env_params, buffer_size, sample_func, normalize=normalize)
+
+        assert args is not None, "args must not be None"
+
+        self.args = args
+
+        self.v_ratio = v_ratio
+        self.rollout_length = 1
+        v_env_params = env_params
+        v_env_params["max_timesteps"] = self.rollout_length
+        self.v_buffer = HerReplayMemory(v_env_params, buffer_size, sample_func=sample_func, normalize=normalize)
+
+        self.r_buffer = SimpleReplayMemory(env_params, buffer_size)
+
+    # Store the episode
+    def push_episode(self, episode_batch):
+        mb_obs, mb_ag, mb_g, mb_actions = episode_batch
+        batch_size = mb_obs.shape[0]
+
+        if self.normalize:
+            self._update_normalizer(episode_batch)
+
+        with self.lock:
+            idxs = self._get_storage_idx(inc=batch_size)
+
+            # Store the information
+            self.buffers["obs"][idxs] = mb_obs
+            self.buffers["ag"][idxs] = mb_ag
+            self.buffers["g"][idxs] = mb_g
+            self.buffers["actions"][idxs] = mb_actions
+            self.n_transitions_stored += self.T * batch_size
+
+        # Reshape
+        mb_obs_next =  mb_obs[:, 1:, :].reshape((self.T * batch_size, self.env_params["obs"]))
+        mb_obs = mb_obs[:, :-1, :].reshape((self.T * batch_size, self.env_params["obs"]))
+        mb_ag_next = mb_ag[:, 1:, :].reshape((self.T * batch_size, self.env_params["goal"]))
+        mb_ag = mb_ag[:, :-1, :].reshape((self.T * batch_size, self.env_params["goal"]))
+        mb_g = mb_g.reshape((self.T * batch_size, self.env_params["goal"]))
+        mb_actions = mb_actions.reshape((self.T * batch_size, self.env_params["action"]))
+        for n in range(len(mb_obs)):
+            self.r_buffer.push_transition([mb_obs[n], mb_obs_next[n], mb_ag[n], mb_ag_next[n], mb_g[n], mb_actions[n]])
+
+    def sample_r(self, batch_size):
+        return self.r_buffer.sample(batch_size)
+
+    def set_rollout_length(self, current_epoch):
+        self.rollout_length = int(
+            min(
+                max(
+                    self.args.rollout_min_length + (current_epoch - self.args.rollout_min_epoch) / (self.args.rollout_max_epoch - self.args.rollout_min_epoch) * (self.args.rollout_max_length - self.args.rollout_min_length),
+                    self.args.rollout_min_length
+                ),
+                self.args.rollout_max_length
+            )
+        )
+
+    def resize_v_memory(self):
+        rollouts_per_epoch = self.args.n_rollout_samples * self.args.epoch_length / self.args.update_env_model
+        model_steps_per_epoch = int(self.rollout_length * rollouts_per_epoch)
+        v_capacity = self.args.model_retain_epochs * model_steps_per_epoch
+
+        temp_buffers = {}
+
+        with self.lock:
+            for key in self.v_buffer.buffers.keys():
+                temp_buffers[key] = self.v_buffer.buffers[key][:self.v_buffer.current_size]
+
+        v_env_params = self.env_params
+        v_env_params["max_timesteps"] = self.rollout_length
+        self.v_buffer = HerReplayMemory(v_env_params, v_capacity,
+                                        sample_func=self.v_buffer.sample_func, normalize=self.v_buffer.normalize)
+
+        for n in range(len(temp_buffers["obs"])):
+            self.v_buffer.push_episode([temp_buffers["obs"][n], temp_buffers["ag"][n],
+                                        temp_buffers["g"][n], temp_buffers["actions"][n]])
+
+    def push_v(self, episode_batch):
+        self.v_buffer.push_episode(episode_batch)
+
+    # Sample the data from the replay buffer
+    def sample(self, batch_size):
+        if len(self.v_buffer) > 0:
+            v_batch_size = int(self.v_ratio * batch_size)
+            batch_size = batch_size - v_batch_size
+
+            if batch_size == 0:
+                v_obs, v_actions, v_rewards, v_obs_next, v_done = self.v_buffer.sample(v_batch_size)
+                return v_obs, v_actions, v_rewards, v_obs_next, v_done
+
+            if v_batch_size == 0:
+                obs, actions, rewards, obs_next, done = super().sample(batch_size)
+                return obs, actions, rewards, obs_next, done
+
+            v_obs, v_actions, v_rewards, v_obs_next, v_done = self.v_buffer.sample(v_batch_size)
+            obs, actions, rewards, obs_next, done = super().sample(batch_size)
+        else:
+            obs, actions, rewards, obs_next, done = super().sample(batch_size)
+            return obs, actions, rewards, obs_next, done
+
+        state = np.concatenate((obs, v_obs), axis=0)
+        action = np.concatenate((actions, v_actions), axis=0)
+        reward = np.concatenate((rewards, v_rewards), axis=0)
+        next_state = np.concatenate((obs_next, v_obs_next), axis=0)
+        done = np.concatenate((done, v_done), axis=0)
+
+        return state, action, reward, next_state, done
+
+
 class SimpleReplayMemory:
     def __init__(self, env_params, buffer_size):
         self.env_params = env_params
@@ -248,8 +363,8 @@ class SimpleReplayMemory:
         self.lock = threading.Lock()
 
     # Store the episode
-    def push_episode(self, batch):
-        obs, obs_next, ag, ag_next, g, actions = batch
+    def push_transition(self, transition):
+        obs, obs_next, ag, ag_next, g, actions = transition
 
         with self.lock:
             self.buffers["obs"][self.pointer] = obs

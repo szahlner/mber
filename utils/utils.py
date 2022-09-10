@@ -120,7 +120,7 @@ def get_predicted_states(model, state, action, env_name, deterministic=False):
     return new_reward, new_next_state, new_done
 
 
-def get_predicted_states_her(model, state, state_ag, state_g, action, env, env_params, deterministic=False):
+def get_predicted_states_her(model, state, state_ag, action, env_params, deterministic=False):
     inputs = np.concatenate((state, state_ag, action), axis=-1)
 
     ensemble_model_means, ensemble_model_vars = model.predict(inputs)
@@ -139,10 +139,7 @@ def get_predicted_states_her(model, state, state_ag, state_g, action, env, env_p
     samples = ensemble_samples[model_idxes, batch_idxes]
     new_next_state, new_next_state_ag = samples[:, :env_params["obs"]], samples[:, env_params["obs"]:]
 
-    new_reward = env.compute_reward(new_next_state_ag, state_g, info=None)
-    new_done = np.zeros_like(new_reward, dtype=bool)
-
-    return new_reward[:, None], new_next_state, new_next_state_ag, new_done[:, None]
+    return new_next_state, new_next_state_ag
 
 
 def get_env_params(env):
