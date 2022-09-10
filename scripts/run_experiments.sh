@@ -21,6 +21,7 @@ cp "./scripts/run_sac_walker2d.sh" "./run_sac_walker2d.sh"
 cp "./scripts/run_sac_walker2d_nmer.sh" "./run_sac_walker2d_nmer.sh"
 
 cp "./scripts/run_sac_fetchreach.sh" "./run_sac_fetchreach.sh"
+cp "./scripts/run_sac_handreach.sh" "./run_sac_handreach.sh"
 
 # cp "./scripts/run_ddpg_ant.sh" "./run_ddpg_ant.sh"
 # cp "./scripts/run_ddpg_halfcheetah.sh" "./run_ddpg_halfcheetah.sh"
@@ -52,6 +53,7 @@ chmod +x "./run_sac_walker2d.sh"
 chmod +x "./run_sac_walker2d_nmer.sh"
 
 chmod +x "./run_sac_fetchreach.sh"
+chmod +x "./run_sac_handreach.sh"
 
 # chmod +x "./run_ddpg_ant.sh"
 # chmod +x "./run_ddpg_halfcheetah.sh"
