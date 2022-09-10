@@ -87,7 +87,7 @@ def main(args):
                                                             "_autotune" if args.automatic_entropy_tuning else "",
                                                             "_mb" if args.model_based else "",
                                                             "_nmer" if args.nmer else "",
-                                                            "_per" if args.nmer else "",
+                                                            "_per" if args.per else "",
                                                             "_slapp" if args.slapp else "",
                                                             args.v_ratio, args.updates_per_step,
                                                             "_deterministic" if args.deterministic_model else "",
