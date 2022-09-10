@@ -144,17 +144,17 @@ class HerReplayMemory:
 
     def _update_normalizer(self, episode_batch):
         mb_obs, mb_ag, mb_g, mb_actions = episode_batch
-        mb_obs_next = mb_obs[1:, :]
-        mb_ag_next = mb_ag[1:, :]
+        mb_obs_next = mb_obs[:, 1:, :]
+        mb_ag_next = mb_ag[:, 1:, :]
         # get the number of normalization transitions
         num_transitions = mb_actions.shape[1]
         # create the new buffer to store them
-        buffer_temp = {'obs': mb_obs[None,:],
-                       'ag': mb_ag[None,:],
-                       'g': mb_g[None,:],
-                       'actions': mb_actions[None,:],
-                       'obs_next': mb_obs_next[None,:],
-                       'ag_next': mb_ag_next[None,:],
+        buffer_temp = {'obs': mb_obs,
+                       'ag': mb_ag,
+                       'g': mb_g,
+                       'actions': mb_actions,
+                       'obs_next': mb_obs_next,
+                       'ag_next': mb_ag_next,
                        }
         transitions = self.sample_func(buffer_temp, num_transitions)
         # pre-process the obs and g

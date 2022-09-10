@@ -11,16 +11,16 @@ rollout_min_length=3
 rollout_max_length=3
 
 # FetchReach-v1 UTD 1
-for seed in 123 456 789
-do
-  python main_sac_her.py --env-name $env_name --num-steps $num_steps --start-steps $start_steps --alpha $alpha --n-update-batches 20 --seed $seed --eval-timesteps 500
-done
+# for seed in 123 456 789
+# do
+#   python main_sac_her.py --env-name $env_name --num-steps $num_steps --start-steps $start_steps --alpha $alpha --n-update-batches 20 --seed $seed --eval-timesteps 500
+# done
 
 # FetchReach-v1 UTD 20
-for seed in 123 456 789
-do
-  python main_sac_her.py --env-name $env_name --num-steps $num_steps --start-steps $start_steps --alpha $alpha --n-update-batches $n_update_batches --seed $seed --eval-timesteps 500
-done
+# for seed in 123 456 789
+# do
+#   python main_sac_her.py --env-name $env_name --num-steps $num_steps --start-steps $start_steps --alpha $alpha --n-update-batches $n_update_batches --seed $seed --eval-timesteps 500
+# done
 
 # FetchReach-v1 HER UTD 1
 for seed in 123 456 789
