@@ -352,11 +352,11 @@ if __name__ == "__main__":
                         help='Policy Type: Gaussian | Deterministic (default: Gaussian)')
     parser.add_argument('--eval', type=bool, default=True,
                         help='Evaluates a policy a policy every 10 episode (default: True)')
-    parser.add_argument('--gamma', type=float, default=0.99, metavar='G',
+    parser.add_argument('--gamma', type=float, default=0.98, metavar='G',
                         help='discount factor for reward (default: 0.99)')
     parser.add_argument('--tau', type=float, default=0.005, metavar='G',
                         help='target smoothing coefficient(τ) (default: 0.005)')
-    parser.add_argument('--lr', type=float, default=0.0003, metavar='G',
+    parser.add_argument('--lr', type=float, default=0.001, metavar='G',
                         help='learning rate (default: 0.0003)')
     parser.add_argument('--alpha', type=float, default=0.2, metavar='G',
                         help='Temperature parameter α determines the relative importance of the entropy\
@@ -371,7 +371,7 @@ if __name__ == "__main__":
                         help='maximum number of steps (default: 1000000)')
     parser.add_argument('--hidden-size', type=int, default=256, metavar='N',
                         help='hidden size (default: 256)')
-    parser.add_argument('--updates-per-step', type=int, default=1, metavar='N',
+    parser.add_argument('--updates-per-step', type=int, default=0, metavar='N',
                         help='model updates per simulator step (default: 1)')
     parser.add_argument('--start-steps', type=int, default=500, metavar='N',
                         help='Steps sampling random actions (default: 10000)')
@@ -400,13 +400,13 @@ if __name__ == "__main__":
     parser.add_argument('--epoch-length', type=int, default=1000, metavar='N',
                         help='steps per epoch (default: 1000)')
     parser.add_argument('--rollout-min-epoch', type=int, default=0, metavar='N',
-                        help='rollout min epoch (default: 20)')
+                        help='rollout min epoch (default: 0)')
     parser.add_argument('--rollout-max-epoch', type=int, default=1, metavar='N',
-                        help='rollout max epoch (default: 150)')
+                        help='rollout max epoch (default: 1)')
     parser.add_argument('--rollout-min-length', type=int, default=3, metavar='N',
-                        help='rollout min length (default: 1)')
+                        help='rollout min length (default: 3)')
     parser.add_argument('--rollout-max-length', type=int, default=3, metavar='N',
-                        help='rollout max length (default: 15)')
+                        help='rollout max length (default: 3)')
     parser.add_argument('--deterministic-model', action="store_true",
                         help='use Model-based deterministic model (default: False)')
     parser.add_argument('--nmer', action="store_true",
