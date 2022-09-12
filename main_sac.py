@@ -11,14 +11,34 @@ import json
 from policy.sac import SAC
 from torch.utils.tensorboard import SummaryWriter
 from collections import namedtuple
-from sklearn.decomposition import PCA
+from scipy.interpolate import RBFInterpolator
 
 
 def main(args):
     args.cuda = True if torch.cuda.is_available() else False
 
     # Environment
-    env = gym.make(args.env_name)
+    if args.env_name == "IIWA14_extended":
+        import robosuite as suite
+        from robosuite.wrappers import GymWrapper
+        from robosuite.controllers import load_controller_config
+
+        env_id = "Lift"
+        env = GymWrapper(
+            suite.make(
+                env_id=env_id,
+                robots="IIWA14_extended",  # use Sawyer robot
+                use_camera_obs=False,  # do not use pixel observations
+                has_offscreen_renderer=False,  # not needed since not using pixel obs
+                has_renderer=True,  # make sure we can render to the screen
+                reward_shaping=True,  # use dense rewards
+                control_freq=20,  # control should happen fast enough so that simulation looks smooth
+                horizon=1000,
+                controller_configs=load_controller_config(default_controller="OSC_POSE"),
+            )
+        )
+    else:
+        env = gym.make(args.env_name)
 
     if args.env_name == "Ant-v2":
         from environment.ant_truncated import AntTruncatedV2
@@ -176,26 +196,25 @@ def main(args):
                 o[t], a[t], o_2[t], r[t] = state, action, next_state, reward
 
         if args.slapp:
-            z_space = np.concatenate((o, a, o_2, r), axis=-1)
-            n_components = min(z_space.shape[1], len(o)) // 2
-            pca = PCA(n_components=n_components, random_state=args.seed)
-            z_space = pca.fit_transform(z_space)
+            if len(o) > o.shape[1] + a.shape[1] + 1:
+                z_space_input = np.concatenate((o, a), axis=-1)
+                z_space_output = np.concatenate((o_2, r), axis=-1)
 
-            k = args.updates_per_step  # interpolated points
-            n_points = len(z_space) - 1
-            z_space_interpolated = np.empty(shape=(n_points * k, n_components))
-            for n in range(n_points):
-                diff = (z_space[n + 1] - z_space[n]) / (k + 1)
-                for m in range(k):
-                    z_space_interpolated[n * k + m] = z_space[n] + (m + 1) * diff
-            z_space_interpolated = pca.inverse_transform(z_space_interpolated)
-            o, a = z_space_interpolated[:, :state_size], z_space_interpolated[:, state_size:state_size + action_size]
-            o_2 = z_space_interpolated[:, state_size + action_size:2*state_size + action_size]
-            r = z_space_interpolated[:, -1:]
-            d = termination_fn(args.env_name, o, a, o_2)
+                k = args.updates_per_step  # interpolated points
+                n_points = len(z_space_input) - 1
+                z_space_interpolated_input = np.empty(shape=(n_points * k, z_space_input.shape[1]))
+                for n in range(n_points):
+                    diff = (z_space_input[n + 1] - z_space_input[n]) / (k + 1)
+                    for m in range(k):
+                        z_space_interpolated_input[n * k + m] = z_space_input[n] + (m + 1) * diff
 
-            for t in range(len(o)):
-                memory.push_v(o[t], a[t], float(r[t]), o_2[t], float(not d[t]))  # Append transition to memory
+                z_space_interpolated_output = RBFInterpolator(z_space_input, z_space_output)(z_space_interpolated_input)
+                o, a = z_space_interpolated_input[:, :state_size], z_space_interpolated_input[:, state_size:]
+                o_2, r = z_space_interpolated_output[:, :state_size], z_space_interpolated_output[:, state_size:]
+                d = termination_fn(args.env_name, o, a, o_2)
+
+                for t in range(len(o)):
+                    memory.push_v(o[t], a[t], float(r[t]), o_2[t], float(not d[t]))  # Append transition to memory
 
     if args.nmer:
         memory.update_neighbours()
@@ -317,26 +336,25 @@ def main(args):
                 o[t], a[t], o_2[t], r[t] = state, action, next_state, reward
 
         if args.slapp:
-            z_space = np.concatenate((o, a, o_2, r), axis=-1)
-            n_components = min(z_space.shape[1], len(o)) // 2
-            pca = PCA(n_components=n_components, random_state=args.seed)
-            z_space = pca.fit_transform(z_space)
+            if len(o) > o.shape[1] + a.shape[1] + 1:
+                z_space_input = np.concatenate((o, a), axis=-1)
+                z_space_output = np.concatenate((o_2, r), axis=-1)
 
-            k = args.updates_per_step  # interpolated points
-            n_points = len(z_space) - 1
-            z_space_interpolated = np.empty(shape=(n_points * k, n_components))
-            for n in range(n_points):
-                diff = (z_space[n + 1] - z_space[n]) / (k + 1)
-                for m in range(k):
-                    z_space_interpolated[n * k + m] = z_space[n] + (m + 1) * diff
-            z_space_interpolated = pca.inverse_transform(z_space_interpolated)
-            o, a = z_space_interpolated[:, :state_size], z_space_interpolated[:, state_size:state_size + action_size]
-            o_2 = z_space_interpolated[:, state_size + action_size:2*state_size + action_size]
-            r = z_space_interpolated[:, -1:]
-            d = termination_fn(args.env_name, o, a, o_2)
+                k = args.updates_per_step  # interpolated points
+                n_points = len(z_space_input) - 1
+                z_space_interpolated_input = np.empty(shape=(n_points * k, z_space_input.shape[1]))
+                for n in range(n_points):
+                    diff = (z_space_input[n + 1] - z_space_input[n]) / (k + 1)
+                    for m in range(k):
+                        z_space_interpolated_input[n * k + m] = z_space_input[n] + (m + 1) * diff
 
-            for t in range(len(o)):
-                memory.push_v(o[t], a[t], float(r[t]), o_2[t], float(not d[t]))  # Append transition to memory
+                z_space_interpolated_output = RBFInterpolator(z_space_input, z_space_output)(z_space_interpolated_input)
+                o, a = z_space_interpolated_input[:, :state_size], z_space_interpolated_input[:, state_size:]
+                o_2, r = z_space_interpolated_output[:, :state_size], z_space_interpolated_output[:, state_size:]
+                d = termination_fn(args.env_name, o, a, o_2)
+
+                for t in range(len(o)):
+                    memory.push_v(o[t], a[t], float(r[t]), o_2[t], float(not d[t]))  # Append transition to memory
 
         if args.nmer:
             memory.update_neighbours()
