@@ -184,7 +184,7 @@ def main(args):
 
         # Fill up replay memory
         steps_taken = len(episode_trajectory)
-        if args.slapp:
+        if args.slapp and False:
             o, a = np.empty(shape=(steps_taken, state_size)), np.empty(shape=(steps_taken, action_size))
             o_2, r = np.empty_like(o), np.empty(shape=(steps_taken, 1))
         # Normal experience replay
@@ -192,10 +192,11 @@ def main(args):
             state, action, reward, next_state, mask = episode_trajectory[t]
             memory.push(state, action, reward, next_state, mask)  # Append transition to memory
 
-            if args.slapp:
-                o[t], a[t], o_2[t], r[t] = state, action, next_state, reward
+            if args.slapp and False:
+                # o[t], a[t], o_2[t], r[t] = state, action, next_state, reward
+                o.append(state), a.append(action), o_2.append(next_state), r.append(reward)
 
-        if args.slapp:
+        if args.slapp and False:
             if len(o) > o.shape[1] + a.shape[1] + 1:
                 z_space_input = np.concatenate((o, a), axis=-1)
                 z_space_output = np.concatenate((o_2, r), axis=-1)
@@ -203,6 +204,8 @@ def main(args):
                 k = args.updates_per_step  # interpolated points
                 n_points = len(z_space_input) - 1
                 z_space_interpolated_input = np.empty(shape=(n_points * k, z_space_input.shape[1]))
+                mixin_param = np.random.uniform(size=(n_points * k, 1))
+
                 for n in range(n_points):
                     # diff = (z_space_input[n + 1] - z_space_input[n]) / (k + 1)
                     diff = (o[n + 1] - o[n]) / (k + 1)
@@ -210,16 +213,36 @@ def main(args):
                         z_space_interpolated_input[n * k + m, :state_size] = o[n] + (m + 1) * diff
                 z_space_interpolated_input[:, state_size:] = agent.select_action(z_space_interpolated_input[:, :state_size])
 
-                z_space_interpolated_output = RBFInterpolator(z_space_input, z_space_output)(z_space_interpolated_input)
-                o, a = z_space_interpolated_input[:, :state_size], z_space_interpolated_input[:, state_size:]
-                o_2, r = z_space_interpolated_output[:, :state_size], z_space_interpolated_output[:, state_size:]
-                d = termination_fn(args.env_name, o, a, o_2)
+                o_2_new = RBFInterpolator(z_space_input, o_2)(z_space_interpolated_input)
+                r_new = RBFInterpolator(z_space_input, r)(z_space_interpolated_input)
+                o_new, a_new = z_space_interpolated_input[:, :state_size], z_space_interpolated_input[:, state_size:]
+                # o_2, r = z_space_interpolated_output, z_space_interpolated_output_
+                d_new = termination_fn(args.env_name, o_new, a_new, o_2_new)
 
-                for t in range(len(o)):
-                    memory.push_v(o[t], a[t], float(r[t]), o_2[t], float(not d[t]))  # Append transition to memory
+                # Append transition to memory
+                for t in range(len(o_new)):
+                    memory.push_v(o_new[t], a_new[t], float(r_new[t]), o_2_new[t], float(not d_new[t]))
 
     if args.nmer:
         memory.update_neighbours()
+
+    if args.slapp:
+        o, a = memory.buffer["state"][:args.start_steps], memory.buffer["action"][:args.start_steps]
+        o_2, r = memory.buffer["next_state"][:args.start_steps], memory.buffer["reward"][:args.start_steps]
+
+        z_space = np.concatenate((o, a), axis=-1)
+        k = args.updates_per_step  # interpolated points
+        n_points = args.start_steps
+        mixin_param = np.random.uniform(size=(n_points * k, 1))
+        o_new = np.tile(o, (k, 1)) * mixin_param + (1 - mixin_param) * np.tile(o_2, (k, 1))
+        a_new = RBFInterpolator(o, a)(o_new)
+        z = np.concatenate((o_new, a_new), axis=-1)
+        o_2_new = RBFInterpolator(z_space, o_2)(z)
+        r_new = RBFInterpolator(z_space, r)(z)
+        d_new = termination_fn(args.env_name, o_new, a_new, o_2_new)
+        # Append transition to memory
+        for t in range(len(o_new)):
+            memory.push_v(o_new[t], a_new[t], float(r_new[t]), o_2_new[t], float(not d_new[t]))
 
     # Training Loop
     total_numsteps = 0
@@ -301,6 +324,26 @@ def main(args):
             episode_trajectory.append(Experience(state, action, reward, next_state, mask))
             state = next_state
 
+            if args.slapp and total_numsteps % args.eval_timesteps == 0:
+                o = memory.buffer["state"][total_numsteps - args.eval_timesteps:total_numsteps]
+                a = memory.buffer["action"][total_numsteps - args.eval_timesteps:total_numsteps]
+                o_2 = memory.buffer["next_state"][total_numsteps - args.eval_timesteps:total_numsteps]
+                r = memory.buffer["reward"][total_numsteps - args.eval_timesteps:total_numsteps]
+
+                z_space = np.concatenate((o, a), axis=-1)
+                k = args.updates_per_step  # interpolated points
+                n_points = args.eval_timesteps
+                mixin_param = np.random.uniform(size=(n_points * k, 1))
+                o_new = np.tile(o, (k, 1)) * mixin_param + (1 - mixin_param) * np.tile(o_2, (k, 1))
+                a_new = RBFInterpolator(o, a)(o_new)
+                z = np.concatenate((o_new, a_new), axis=-1)
+                o_2_new = RBFInterpolator(z_space, o_2)(z)
+                r_new = RBFInterpolator(z_space, r)(z)
+                d_new = termination_fn(args.env_name, o_new, a_new, o_2_new)
+                # Append transition to memory
+                for t in range(len(o_new)):
+                    memory.push_v(o_new[t], a_new[t], float(r_new[t]), o_2_new[t], float(not d_new[t]))
+
             if total_numsteps % args.eval_timesteps == 0 and args.eval is True:
                 avg_reward_eval = 0.
                 episodes_eval = 10
@@ -326,7 +369,7 @@ def main(args):
 
         # Fill up replay memory
         steps_taken = len(episode_trajectory)
-        if args.slapp:
+        if args.slapp and False:
             o, a = np.empty(shape=(steps_taken, state_size)), np.empty(shape=(steps_taken, action_size))
             o_2, r = np.empty_like(o), np.empty(shape=(steps_taken, 1))
         # Normal experience replay
@@ -334,10 +377,10 @@ def main(args):
             state, action, reward, next_state, mask = episode_trajectory[t]
             memory.push(state, action, reward, next_state, mask)  # Append transition to memory
 
-            if args.slapp:
+            if args.slapp and False:
                 o[t], a[t], o_2[t], r[t] = state, action, next_state, reward
 
-        if args.slapp:
+        if args.slapp and False:
             if len(o) > o.shape[1] + a.shape[1] + 1:
                 z_space_input = np.concatenate((o, a), axis=-1)
                 z_space_output = np.concatenate((o_2, r), axis=-1)
