@@ -269,7 +269,7 @@ class HerMbpoReplayMemory(HerReplayMemory):
             self.n_transitions_stored += self.T * batch_size
 
         # Reshape
-        mb_obs_next =  mb_obs[:, 1:, :].reshape((self.T * batch_size, self.env_params["obs"]))
+        mb_obs_next = mb_obs[:, 1:, :].reshape((self.T * batch_size, self.env_params["obs"]))
         mb_obs = mb_obs[:, :-1, :].reshape((self.T * batch_size, self.env_params["obs"]))
         mb_ag_next = mb_ag[:, 1:, :].reshape((self.T * batch_size, self.env_params["goal"]))
         mb_ag = mb_ag[:, :-1, :].reshape((self.T * batch_size, self.env_params["goal"]))
@@ -308,22 +308,35 @@ class HerMbpoReplayMemory(HerReplayMemory):
         self.v_buffer = SimpleReplayMemory(v_env_params, v_capacity)  # HerReplayMemory(v_env_params, v_capacity, sample_func=self.v_buffer.sample_func, normalize=self.v_buffer.normalize)
 
         for n in range(len(temp_buffers["obs"])):
-            self.v_buffer.push_episode([temp_buffers["obs"][n], temp_buffers["ag"][n],
-                                        temp_buffers["g"][n], temp_buffers["actions"][n]])
+            self.v_buffer.push_transition([temp_buffers["obs"][n], temp_buffers["obs_next"][n],
+                                           temp_buffers["ag"][n], temp_buffers["ag_next"][n],
+                                           temp_buffers["g"][n], temp_buffers["actions"][n]])
 
     def push_v(self, episode_batch):
         mb_obs, mb_ag, mb_g, mb_actions = episode_batch
+        batch_size = mb_obs.shape[0]
 
-        mb_obs_next =  mb_obs[:, 1:, :]
-        mb_obs = mb_obs[:, :-1, :]
-        mb_ag_next = mb_ag[:, 1:, :]
-        mb_ag = mb_ag[:, :-1, :]
+        # mb_obs_next =  mb_obs[:, 1:, :]
+        # mb_obs = mb_obs[:, :-1, :]
+        # mb_ag_next = mb_ag[:, 1:, :]
+        # mb_ag = mb_ag[:, :-1, :]
+
+        # for n in range(len(mb_obs)):
+        #     for k in range(self.rollout_length):
+        #         transition = [mb_obs[n][k], mb_obs_next[n][k], mb_ag[n][k], mb_ag_next[n][k], mb_g[n][k], mb_actions[n][k]]
+        #         self.v_buffer.push_transition(transition)
+        # self.v_buffer.push_episode(episode_batch)
+
+        # Reshape
+        mb_obs_next = mb_obs[:, 1:, :].reshape((self.T * batch_size, self.env_params["obs"]))
+        mb_obs = mb_obs[:, :-1, :].reshape((self.T * batch_size, self.env_params["obs"]))
+        mb_ag_next = mb_ag[:, 1:, :].reshape((self.T * batch_size, self.env_params["goal"]))
+        mb_ag = mb_ag[:, :-1, :].reshape((self.T * batch_size, self.env_params["goal"]))
+        mb_g = mb_g.reshape((self.T * batch_size, self.env_params["goal"]))
+        mb_actions = mb_actions.reshape((self.T * batch_size, self.env_params["action"]))
 
         for n in range(len(mb_obs)):
-            for k in range(self.rollout_length):
-                transition = [mb_obs[n][k], mb_obs_next[n][k], mb_ag[n][k], mb_ag_next[n][k], mb_g[n][k], mb_actions[n][k]]
-                self.v_buffer.push_transition(transition)
-        # self.v_buffer.push_episode(episode_batch)
+            self.v_buffer.push_transition([mb_obs[n], mb_obs_next[n], mb_ag[n], mb_ag_next[n], mb_g[n], mb_actions[n]])
 
     # Sample the data from the replay buffer
     def sample(self, batch_size):
@@ -332,7 +345,17 @@ class HerMbpoReplayMemory(HerReplayMemory):
             batch_size = batch_size - v_batch_size
 
             if batch_size == 0:
-                v_obs, v_actions, v_rewards, v_obs_next, v_done = self.v_buffer.sample(v_batch_size)
+                # v_obs, v_actions, v_rewards, v_obs_next, v_done = self.v_buffer.sample(v_batch_size)
+                v_transitions = self.v_buffer.sample(v_batch_size)
+                v_rewards = self.env.compute_reward(v_transitions["ag"], v_transitions["g"], None)
+                v_done = np.ones_like(v_rewards)
+                if self.normalize:
+                    v_transitions["obs"] = self.o_norm.normalize(v_transitions["obs"])
+                    v_transitions["g"] = self.g_norm.normalize(v_transitions["g"])
+                    v_transitions["obs_next"] = self.o_norm.normalize(v_transitions["obs_next"])
+                v_obs = np.concatenate((v_transitions["obs"], v_transitions["g"]), axis=-1)
+                v_actions = v_transitions["actions"]
+                v_obs_next = np.concatenate((v_transitions["obs_next"], v_transitions["g"]), axis=-1)
                 return v_obs, v_actions, v_rewards, v_obs_next, v_done
 
             if v_batch_size == 0:
@@ -340,12 +363,17 @@ class HerMbpoReplayMemory(HerReplayMemory):
                 return obs, actions, rewards, obs_next, done
 
             # v_obs, v_actions, v_rewards, v_obs_next, v_done = self.v_buffer.sample(v_batch_size)
-            transitions = self.v_buffer.sample(v_batch_size)
-            v_obs = np.concatenate((transitions["obs"], transitions["g"]), axis=-1)
-            v_actions = transitions["actions"]
-            v_obs_next = np.concatenate((transitions["obs_next"], transitions["g"]), axis=-1)
-            v_rewards = self.env.compute_reward(transitions["ag"], transitions["g"], None)
+            v_transitions = self.v_buffer.sample(v_batch_size)
+            v_rewards = self.env.compute_reward(v_transitions["ag"], v_transitions["g"], None)
             v_done = np.ones_like(v_rewards)
+            if self.normalize:
+                v_transitions["obs"] = self.o_norm.normalize(v_transitions["obs"])
+                v_transitions["g"] = self.g_norm.normalize(v_transitions["g"])
+                v_transitions["obs_next"] = self.o_norm.normalize(v_transitions["obs_next"])
+            v_obs = np.concatenate((v_transitions["obs"], v_transitions["g"]), axis=-1)
+            v_actions = v_transitions["actions"]
+            v_obs_next = np.concatenate((v_transitions["obs_next"], v_transitions["g"]), axis=-1)
+
             obs, actions, rewards, obs_next, done = super().sample(batch_size)
         else:
             obs, actions, rewards, obs_next, done = super().sample(batch_size)
