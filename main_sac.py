@@ -204,9 +204,11 @@ def main(args):
                 n_points = len(z_space_input) - 1
                 z_space_interpolated_input = np.empty(shape=(n_points * k, z_space_input.shape[1]))
                 for n in range(n_points):
-                    diff = (z_space_input[n + 1] - z_space_input[n]) / (k + 1)
+                    # diff = (z_space_input[n + 1] - z_space_input[n]) / (k + 1)
+                    diff = (o[n + 1] - o[n]) / (k + 1)
                     for m in range(k):
-                        z_space_interpolated_input[n * k + m] = z_space_input[n] + (m + 1) * diff
+                        z_space_interpolated_input[n * k + m, :state_size] = o[n] + (m + 1) * diff
+                z_space_interpolated_input[:, state_size:] = agent.select_action(z_space_interpolated_input[:, :state_size])
 
                 z_space_interpolated_output = RBFInterpolator(z_space_input, z_space_output)(z_space_interpolated_input)
                 o, a = z_space_interpolated_input[:, :state_size], z_space_interpolated_input[:, state_size:]
@@ -344,9 +346,11 @@ def main(args):
                 n_points = len(z_space_input) - 1
                 z_space_interpolated_input = np.empty(shape=(n_points * k, z_space_input.shape[1]))
                 for n in range(n_points):
-                    diff = (z_space_input[n + 1] - z_space_input[n]) / (k + 1)
+                    # diff = (z_space_input[n + 1] - z_space_input[n]) / (k + 1)
+                    diff = (o[n + 1] - o[n]) / (k + 1)
                     for m in range(k):
-                        z_space_interpolated_input[n * k + m] = z_space_input[n] + (m + 1) * diff
+                        z_space_interpolated_input[n * k + m, :state_size] = o[n] + (m + 1) * diff
+                z_space_interpolated_input[:, state_size:] = agent.select_action(z_space_interpolated_input[:, :state_size])
 
                 z_space_interpolated_output = RBFInterpolator(z_space_input, z_space_output)(z_space_interpolated_input)
                 o, a = z_space_interpolated_input[:, :state_size], z_space_interpolated_input[:, state_size:]
