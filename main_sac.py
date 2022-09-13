@@ -196,11 +196,14 @@ def main(args):
                 a = memory.buffer["action"][total_numsteps- steps_taken:total_numsteps]
                 o_2 = memory.buffer["next_state"][total_numsteps- steps_taken:total_numsteps]
                 r = memory.buffer["reward"][total_numsteps- steps_taken:total_numsteps]
+                o_diff_mean, o_diff_std = np.mean(o_2 - o, axis=0), np.std(o_2 - o, axis=0)
 
                 k = args.updates_per_step
                 mixin_param = np.random.uniform(size=(steps_taken * k, 1))
-                o_new = np.tile(o, (k, 1)) * mixin_param + (1 - mixin_param) * np.tile(o_2, (k, 1))
-                a_new = RBFInterpolator(o, a)(o_new)
+                noise_param = np.random.normal(size=(steps_taken * k, 1)) * o_diff_std
+                o_new = np.tile(o, (k, 1)) + o_diff_mean * mixin_param + noise_param
+                # o_new = np.tile(o, (k, 1)) * mixin_param + (1 - mixin_param) * np.tile(o_2, (k, 1))
+                a_new = agent.select_action(o_new)  # RBFInterpolator(o, a)(o_new)
 
                 z_space = np.concatenate((o, a), axis=-1)
                 z = np.concatenate((o_new, a_new), axis=-1)
@@ -209,9 +212,15 @@ def main(args):
                 r_new = RBFInterpolator(z_space, r)(z)
                 d_new = termination_fn(args.env_name, o_new, a_new, o_2_new)
 
-                # Append transition to memory
-                for t in range(len(o_new)):
-                    memory.push_v(o_new[t], a_new[t], float(r_new[t]), o_2_new[t], float(not d_new[t]))
+                idx = np.where(np.sum(np.logical_or(o_2_new > np.max(o_2, axis=0),
+                                                    o_2_new < np.min(o_2, axis=0)), axis=-1) == 0, True, False)
+
+                if idx.sum() > 0:
+                    o_new, a_new, r_new, o_2_new, d_new = o_new[idx], a_new[idx], r_new[idx], o_2_new[idx], d_new[idx]
+
+                    # Append transition to memory
+                    for t in range(len(o_new)):
+                        memory.push_v(o_new[t], a_new[t], float(r_new[t]), o_2_new[t], float(not d_new[t]))
 
     if args.nmer:
         memory.update_neighbours()
@@ -332,11 +341,14 @@ def main(args):
                 a = memory.buffer["action"][total_numsteps- steps_taken:total_numsteps]
                 o_2 = memory.buffer["next_state"][total_numsteps- steps_taken:total_numsteps]
                 r = memory.buffer["reward"][total_numsteps- steps_taken:total_numsteps]
+                o_diff_mean, o_diff_std = np.mean(o_2 - o, axis=0), np.std(o_2 - o, axis=0)
 
                 k = args.updates_per_step
                 mixin_param = np.random.uniform(size=(steps_taken * k, 1))
-                o_new = np.tile(o, (k, 1)) * mixin_param + (1 - mixin_param) * np.tile(o_2, (k, 1))
-                a_new = RBFInterpolator(o, a)(o_new)
+                noise_param = np.random.normal(size=(steps_taken * k, 1)) * o_diff_std
+                o_new = np.tile(o, (k, 1)) + o_diff_mean * mixin_param + noise_param
+                # o_new = np.tile(o, (k, 1)) * mixin_param + (1 - mixin_param) * np.tile(o_2, (k, 1))
+                a_new = agent.select_action(o_new)  # RBFInterpolator(o, a)(o_new)
 
                 z_space = np.concatenate((o, a), axis=-1)
                 z = np.concatenate((o_new, a_new), axis=-1)
@@ -345,9 +357,15 @@ def main(args):
                 r_new = RBFInterpolator(z_space, r)(z)
                 d_new = termination_fn(args.env_name, o_new, a_new, o_2_new)
 
-                # Append transition to memory
-                for t in range(len(o_new)):
-                    memory.push_v(o_new[t], a_new[t], float(r_new[t]), o_2_new[t], float(not d_new[t]))
+                idx = np.where(np.sum(np.logical_or(o_2_new > np.max(o_2, axis=0),
+                                                    o_2_new < np.min(o_2, axis=0)), axis=-1) == 0, True, False)
+
+                if idx.sum() > 0:
+                    o_new, a_new, r_new, o_2_new, d_new = o_new[idx], a_new[idx], r_new[idx], o_2_new[idx], d_new[idx]
+
+                    # Append transition to memory
+                    for t in range(len(o_new)):
+                        memory.push_v(o_new[t], a_new[t], float(r_new[t]), o_2_new[t], float(not d_new[t]))
 
         if args.nmer:
             memory.update_neighbours()
