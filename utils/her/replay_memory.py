@@ -244,7 +244,8 @@ class HerMbpoReplayMemory(HerReplayMemory):
         self.rollout_length = 1
         v_env_params = env_params
         v_env_params["max_timesteps"] = self.rollout_length
-        self.v_buffer = SimpleReplayMemory(env_params, buffer_size)  # HerReplayMemory(v_env_params, buffer_size, sample_func=sample_func, normalize=normalize)
+        # self.v_buffer = SimpleReplayMemory(env_params, buffer_size)  # HerReplayMemory(v_env_params, buffer_size, sample_func=sample_func, normalize=normalize)
+        self.v_buffer = HerReplayMemory(v_env_params, buffer_size, sample_func=sample_func, normalize=False)
 
         self.r_buffer = SimpleReplayMemory(env_params, buffer_size)
 
@@ -305,7 +306,14 @@ class HerMbpoReplayMemory(HerReplayMemory):
 
         v_env_params = self.env_params
         v_env_params["max_timesteps"] = self.rollout_length
-        self.v_buffer = SimpleReplayMemory(v_env_params, v_capacity)  # HerReplayMemory(v_env_params, v_capacity, sample_func=self.v_buffer.sample_func, normalize=self.v_buffer.normalize)
+        # self.v_buffer = SimpleReplayMemory(v_env_params, v_capacity)  # HerReplayMemory(v_env_params, v_capacity, sample_func=self.v_buffer.sample_func, normalize=self.v_buffer.normalize)
+        self.v_buffer = HerReplayMemory(v_env_params, v_capacity,
+                                        sample_func=self.v_buffer.sample_func, normalize=self.v_buffer.normalize)
+
+        for n in range(len(temp_buffers["obs"])):
+            self.v_buffer.push_episode([temp_buffers["obs"][n], temp_buffers["ag"][n],
+                                        temp_buffers["g"][n], temp_buffers["actions"][n]])
+        return
 
         for n in range(len(temp_buffers["obs"])):
             self.v_buffer.push_transition([temp_buffers["obs"][n], temp_buffers["obs_next"][n],
@@ -313,6 +321,9 @@ class HerMbpoReplayMemory(HerReplayMemory):
                                            temp_buffers["g"][n], temp_buffers["actions"][n]])
 
     def push_v(self, episode_batch):
+        self.v_buffer.push_episode(episode_batch)
+        return
+
         mb_obs, mb_ag, mb_g, mb_actions = episode_batch
         batch_size = mb_obs.shape[0]
 
@@ -345,34 +356,50 @@ class HerMbpoReplayMemory(HerReplayMemory):
             batch_size = batch_size - v_batch_size
 
             if batch_size == 0:
-                # v_obs, v_actions, v_rewards, v_obs_next, v_done = self.v_buffer.sample(v_batch_size)
-                v_transitions = self.v_buffer.sample(v_batch_size)
-                v_rewards = self.env.compute_reward(v_transitions["ag"], v_transitions["g"], None)
-                v_done = np.ones_like(v_rewards)
+                v_obs, v_actions, v_rewards, v_obs_next, v_done = self.v_buffer.sample(v_batch_size)
                 if self.normalize:
-                    v_transitions["obs"] = self.o_norm.normalize(v_transitions["obs"])
-                    v_transitions["g"] = self.g_norm.normalize(v_transitions["g"])
-                    v_transitions["obs_next"] = self.o_norm.normalize(v_transitions["obs_next"])
-                v_obs = np.concatenate((v_transitions["obs"], v_transitions["g"]), axis=-1)
-                v_actions = v_transitions["actions"]
-                v_obs_next = np.concatenate((v_transitions["obs_next"], v_transitions["g"]), axis=-1)
+                    o, g = v_obs[:, :self.env_params["obs"]], v_obs[:, self.env_params["obs"]:]
+                    o_norm, g_norm = self.o_norm.normalize(o), self.g_norm.normalize(g)
+                    v_obs = np.concatenate((o_norm, g_norm), axis=-1)
+
+                    o_2, g_2 = v_obs_next[:, :self.env_params["obs"]], v_obs_next[:, self.env_params["obs"]:]
+                    o_2_norm, g_2_norm = self.o_norm.normalize(o_2), self.g_norm.normalize(g_2)
+                    v_obs_next = np.concatenate((o_2_norm, g_2_norm), axis=-1)
+                # v_transitions = self.v_buffer.sample(v_batch_size)
+                # v_rewards = self.env.compute_reward(v_transitions["ag"], v_transitions["g"], None)
+                # v_done = np.ones_like(v_rewards)
+                # if self.normalize:
+                #     v_transitions["obs"] = self.o_norm.normalize(v_transitions["obs"])
+                #     v_transitions["g"] = self.g_norm.normalize(v_transitions["g"])
+                #     v_transitions["obs_next"] = self.o_norm.normalize(v_transitions["obs_next"])
+                # v_obs = np.concatenate((v_transitions["obs"], v_transitions["g"]), axis=-1)
+                # v_actions = v_transitions["actions"]
+                # v_obs_next = np.concatenate((v_transitions["obs_next"], v_transitions["g"]), axis=-1)
                 return v_obs, v_actions, v_rewards, v_obs_next, v_done
 
             if v_batch_size == 0:
                 obs, actions, rewards, obs_next, done = super().sample(batch_size)
                 return obs, actions, rewards, obs_next, done
 
-            # v_obs, v_actions, v_rewards, v_obs_next, v_done = self.v_buffer.sample(v_batch_size)
-            v_transitions = self.v_buffer.sample(v_batch_size)
-            v_rewards = self.env.compute_reward(v_transitions["ag"], v_transitions["g"], None)
-            v_done = np.ones_like(v_rewards)
+            v_obs, v_actions, v_rewards, v_obs_next, v_done = self.v_buffer.sample(v_batch_size)
             if self.normalize:
-                v_transitions["obs"] = self.o_norm.normalize(v_transitions["obs"])
-                v_transitions["g"] = self.g_norm.normalize(v_transitions["g"])
-                v_transitions["obs_next"] = self.o_norm.normalize(v_transitions["obs_next"])
-            v_obs = np.concatenate((v_transitions["obs"], v_transitions["g"]), axis=-1)
-            v_actions = v_transitions["actions"]
-            v_obs_next = np.concatenate((v_transitions["obs_next"], v_transitions["g"]), axis=-1)
+                o, g = v_obs[:, :self.env_params["obs"]], v_obs[:, self.env_params["obs"]:]
+                o_norm, g_norm = self.o_norm.normalize(o), self.g_norm.normalize(g)
+                v_obs = np.concatenate((o_norm, g_norm), axis=-1)
+
+                o_2, g_2 = v_obs_next[:, :self.env_params["obs"]], v_obs_next[:, self.env_params["obs"]:]
+                o_2_norm, g_2_norm = self.o_norm.normalize(o_2), self.g_norm.normalize(g_2)
+                v_obs_next = np.concatenate((o_2_norm, g_2_norm), axis=-1)
+            # v_transitions = self.v_buffer.sample(v_batch_size)
+            # v_rewards = self.env.compute_reward(v_transitions["ag"], v_transitions["g"], None)
+            # v_done = np.ones_like(v_rewards)
+            # if self.normalize:
+            #     v_transitions["obs"] = self.o_norm.normalize(v_transitions["obs"])
+            #     v_transitions["g"] = self.g_norm.normalize(v_transitions["g"])
+            #     v_transitions["obs_next"] = self.o_norm.normalize(v_transitions["obs_next"])
+            # v_obs = np.concatenate((v_transitions["obs"], v_transitions["g"]), axis=-1)
+            # v_actions = v_transitions["actions"]
+            # v_obs_next = np.concatenate((v_transitions["obs_next"], v_transitions["g"]), axis=-1)
 
             obs, actions, rewards, obs_next, done = super().sample(batch_size)
         else:
