@@ -185,7 +185,7 @@ def main(args):
 
             if args.model_based and total_numsteps % args.update_env_model == 0:
                 # Get real samples from environment
-                batch_size = len(memory)
+                batch_size = max(len(memory), 10000)
                 transitions = memory.sample_r(batch_size=batch_size)
 
                 inputs = np.concatenate((transitions["obs"], transitions["ag"], transitions["actions"]), axis=-1)
@@ -374,7 +374,7 @@ if __name__ == "__main__":
     parser.add_argument('--updates-per-step', type=int, default=0, metavar='N',
                         help='model updates per simulator step (default: 1)')
     parser.add_argument('--start-steps', type=int, default=500, metavar='N',
-                        help='Steps sampling random actions (default: 10000)')
+                        help='Steps sampling random actions (default: 500)')
     parser.add_argument('--target-update-interval', type=int, default=1, metavar='N',
                         help='Value target update per no. of updates per step (default: 1)')
     parser.add_argument('--replay-size', type=int, default=1000000, metavar='N',
