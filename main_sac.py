@@ -12,7 +12,6 @@ from policy.sac import SAC
 from torch.utils.tensorboard import SummaryWriter
 from collections import namedtuple
 from scipy.interpolate import RBFInterpolator
-from sklearn.preprocessing import StandardScaler
 
 
 def main(args):
@@ -150,11 +149,13 @@ def main(args):
         elif args.slapp:
             from utils.utils import termination_fn
             from utils.replay_memory import SimpleLocalApproximationReplayMemory
+            from sklearn.neighbors import NearestNeighbors
             state_size = np.prod(env.observation_space.shape)
             action_size = np.prod(env.action_space.shape)
             memory = SimpleLocalApproximationReplayMemory(args.replay_size, args.seed,
                                                           state_dim=state_size, action_dim=action_size,
                                                           v_ratio=args.v_ratio, env_name=args.env_name, args=args)
+
         else:
             from utils.replay_memory import ReplayMemory
             memory = ReplayMemory(args.replay_size, args.seed)
@@ -190,8 +191,15 @@ def main(args):
             state, action, reward, next_state, mask = episode_trajectory[t]
             memory.push(state, action, reward, next_state, mask)  # Append transition to memory
 
-        if args.slapp:
-            if steps_taken > state_size + action_size:
+        if args.slapp and False:
+            o = memory.buffer["state"][:args.start_steps]
+            a = memory.buffer["action"][:args.start_steps]
+            r = memory.buffer["reward"][:args.start_steps]
+            z_space = np.concatenate((o, a, r), axis=-1)
+            z_space_norm = memory.scaler.fit_transform(z_space)
+            memory.kmeans.partial_fit(z_space_norm)
+
+            if steps_taken > state_size + action_size and False:
                 o = memory.buffer["state"][total_numsteps - steps_taken:total_numsteps]
                 a = memory.buffer["action"][total_numsteps- steps_taken:total_numsteps]
                 o_2 = memory.buffer["next_state"][total_numsteps- steps_taken:total_numsteps]
@@ -221,6 +229,16 @@ def main(args):
                     # Append transition to memory
                     for t in range(len(o_new)):
                         memory.push_v(o_new[t], a_new[t], float(r_new[t]), o_2_new[t], float(not d_new[t]))
+
+    if args.slapp:
+        o = memory.buffer["state"][:args.start_steps]
+        a = memory.buffer["action"][:args.start_steps]
+        r = memory.buffer["reward"][:args.start_steps]
+        o_2 = memory.buffer["next_state"][:args.start_steps]
+        z_space = np.concatenate((o, a, r, o_2), axis=-1)
+        z_space_norm = memory.scaler.fit_transform(z_space)
+        memory.kmeans.fit(z_space_norm)
+        memory.knn.fit(memory.kmeans.cluster_centers_)
 
     if args.nmer:
         memory.update_neighbours()
@@ -335,7 +353,7 @@ def main(args):
             state, action, reward, next_state, mask = episode_trajectory[t]
             memory.push(state, action, reward, next_state, mask)  # Append transition to memory
 
-        if args.slapp:
+        if args.slapp and False:
             if steps_taken > state_size + action_size:
                 o = memory.buffer["state"][total_numsteps - steps_taken:total_numsteps]
                 a = memory.buffer["action"][total_numsteps- steps_taken:total_numsteps]
@@ -366,6 +384,17 @@ def main(args):
                     # Append transition to memory
                     for t in range(len(o_new)):
                         memory.push_v(o_new[t], a_new[t], float(r_new[t]), o_2_new[t], float(not d_new[t]))
+
+        if args.slapp:
+            o = memory.buffer["state"][total_numsteps - steps_taken:total_numsteps]
+            a = memory.buffer["action"][total_numsteps - steps_taken:total_numsteps]
+            r = memory.buffer["reward"][total_numsteps - steps_taken:total_numsteps]
+            o_2 = memory.buffer["next_state"][total_numsteps - steps_taken:total_numsteps]
+            z_space = np.concatenate((o, a, r, o_2), axis=-1)
+            memory.scaler.partial_fit(z_space)
+            z_space_norm = memory.scaler.transform(z_space)
+            memory.kmeans.partial_fit(z_space_norm)
+            memory.knn.fit(memory.kmeans.cluster_centers_)
 
         if args.nmer:
             memory.update_neighbours()

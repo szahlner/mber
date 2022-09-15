@@ -8,6 +8,8 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.neighbors import NearestNeighbors
 from scipy.spatial import ConvexHull, Delaunay
 from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import MiniBatchKMeans
 
 
 class ReplayMemory:
@@ -662,6 +664,10 @@ class SimpleLocalApproximationReplayMemory(BaseReplayMemory):
             self.v_capacity = v_capacity
         self.v_buffer = BaseReplayMemory(self.v_capacity, seed, state_dim, action_dim)
 
+        self.scaler = StandardScaler()
+        self.kmeans = MiniBatchKMeans(n_clusters=args.epoch_length, random_state=seed, batch_size=2048)
+        self.knn = NearestNeighbors(n_neighbors=2)
+
         self.v_ratio = v_ratio
         self.env_name = env_name
         self.args = args
@@ -678,6 +684,37 @@ class SimpleLocalApproximationReplayMemory(BaseReplayMemory):
         return super().sample(batch_size=batch_size)
 
     def sample(self, batch_size):
+        state, action, reward, next_state, done = self.sample_r(batch_size=batch_size)
+
+        z_space = np.concatenate((state, action, reward, next_state), axis=-1)
+        z_space_norm = self.scaler.transform(z_space)
+        nn_indices = self.knn.kneighbors(z_space_norm, return_distance=False)
+        nn_indices = nn_indices[:, 1]  # exclude oneself
+
+        cluster_centers_norm = self.kmeans.cluster_centers_.copy()
+        cluster_centers = self.scaler.inverse_transform(cluster_centers_norm)
+
+        v_state = cluster_centers[nn_indices, :self.state_dim]
+        v_action = cluster_centers[nn_indices, self.state_dim:self.action_dim + self.state_dim]
+        v_reward = cluster_centers[nn_indices, self.action_dim + self.state_dim:self.action_dim + self.state_dim + 1]
+        v_next_state = cluster_centers[nn_indices, -self.state_dim:]
+
+        delta_state = (next_state - state).copy()
+        v_delta_state = (v_next_state - v_state).copy()
+
+        # Linearly interpolate sample and neighbor points
+        mixing_param = np.random.uniform(size=(len(state), 1))
+        state = state * mixing_param + v_state * (1 - mixing_param)
+        action = action * mixing_param + v_action * (1 - mixing_param)
+        reward = (reward * mixing_param + v_reward * (1 - mixing_param)).squeeze()
+        delta_state = delta_state * mixing_param + v_delta_state * (1 - mixing_param)
+        next_state = state + delta_state
+
+        done = termination_fn(self.env_name, state, action, next_state)
+        mask = np.invert(done).astype(float).squeeze()
+
+        return state, action, reward, next_state, mask
+
         if len(self.v_buffer) > 0:
             v_batch_size = int(self.v_ratio * batch_size)
             batch_size = batch_size - v_batch_size
