@@ -239,6 +239,8 @@ def main(args):
         z_space_norm = memory.scaler.fit_transform(z_space)
         memory.kmeans.fit(z_space_norm)
         memory.knn.fit(memory.kmeans.cluster_centers_)
+        memory.nn = memory.knn.kneighbors(memory.kmeans.cluster_centers_, return_distance=False)
+        memory.nn = memory.nn[:, 1]
 
     if args.nmer:
         memory.update_neighbours()
@@ -395,6 +397,8 @@ def main(args):
             z_space_norm = memory.scaler.transform(z_space)
             memory.kmeans.partial_fit(z_space_norm)
             memory.knn.fit(memory.kmeans.cluster_centers_)
+            memory.nn = memory.knn.kneighbors(memory.kmeans.cluster_centers_, return_distance=False)
+            memory.nn = memory.nn[:, 1]
 
         if args.nmer:
             memory.update_neighbours()
