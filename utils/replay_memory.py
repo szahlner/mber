@@ -4,10 +4,7 @@ import random
 import numpy as np
 from utils.utils import termination_fn
 from utils.segment_tree import MinSegmentTree, SumSegmentTree
-from sklearn.preprocessing import StandardScaler
 from sklearn.neighbors import NearestNeighbors
-from scipy.spatial import ConvexHull, Delaunay
-from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import MiniBatchKMeans
 
@@ -665,7 +662,7 @@ class SimpleLocalApproximationReplayMemory(BaseReplayMemory):
         self.v_buffer = BaseReplayMemory(self.v_capacity, seed, state_dim, action_dim)
 
         self.scaler = StandardScaler()
-        self.kmeans = MiniBatchKMeans(n_clusters=args.epoch_length, random_state=seed, batch_size=2048)
+        self.kmeans = MiniBatchKMeans(n_clusters=args.epoch_length, random_state=seed, batch_size=2048, reassignment_ratio=0)
         self.knn = NearestNeighbors(n_neighbors=2)
         self.nn = None
 
@@ -674,6 +671,29 @@ class SimpleLocalApproximationReplayMemory(BaseReplayMemory):
         self.args = args
         self.rollout_length = 0
         self.seed = seed
+
+    def update_clusters(self, o, a):
+        z_space = np.concatenate((o, a), axis=-1)
+        self.scaler.partial_fit(z_space)
+        z_space_norm = self.scaler.transform(z_space)
+        self.kmeans = self.kmeans.partial_fit(z_space_norm)
+
+        o = self.buffer["state"][:len(self)]
+        a = self.buffer["action"][:len(self)]
+        z_space = np.concatenate((o, a), axis=-1)
+        z_space_norm = self.scaler.transform(z_space)
+
+        cluster_labels = np.vstack((np.arange(len(z_space_norm)), self.kmeans.predict(z_space_norm))).T
+        shuffled_cluster_labels = np.random.permutation(cluster_labels)
+
+        self.knn.fit(self.kmeans.cluster_centers_)
+        nn_labels = self.knn.kneighbors(self.kmeans.cluster_centers_, return_distance=False)
+        nn_labels = nn_labels[:, 1]
+
+        self.nn = np.empty(shape=(len(nn_labels),), dtype=int)
+        for n in range(len(nn_labels)):
+            self.nn[n] = np.where(shuffled_cluster_labels[:, 1] == nn_labels[n])[0][0]
+        self.nn = shuffled_cluster_labels[self.nn, 0]
 
     def push_v(self, state, action, reward, next_state, done):
         self.v_buffer.push(state, action, reward, next_state, done)
@@ -689,20 +709,15 @@ class SimpleLocalApproximationReplayMemory(BaseReplayMemory):
 
         state, action, reward, next_state, done = self.sample_r(batch_size=batch_size)
 
-        z_space = np.concatenate((state, action, reward, next_state), axis=-1)
+        z_space = np.concatenate((state, action), axis=-1)
         z_space_norm = self.scaler.transform(z_space)
-        cluster_idx = self.kmeans.predict(z_space_norm)
-        # cluster_centers =
-        # nn_indices = self.knn.kneighbors(, return_distance=False)
-        # nn_indices = nn_indices[:, 1]  # exclude oneself
+        cluster_labels = self.kmeans.predict(z_space_norm)
+        nn_indices = self.nn[cluster_labels]
 
-        cluster_centers_norm = self.kmeans.cluster_centers_[self.nn[cluster_idx]].copy()
-        cluster_centers = self.scaler.inverse_transform(cluster_centers_norm)
-
-        v_state = cluster_centers[:, :self.state_dim]
-        v_action = cluster_centers[:, self.state_dim:self.action_dim + self.state_dim]
-        v_reward = cluster_centers[:, self.action_dim + self.state_dim:self.action_dim + self.state_dim + 1]
-        v_next_state = cluster_centers[:, -self.state_dim:]
+        v_state = self.buffer["state"][nn_indices]
+        v_action = self.buffer["action"][nn_indices]
+        v_reward = self.buffer["reward"][nn_indices]
+        v_next_state = self.buffer["next_state"][nn_indices]
 
         delta_state = (next_state - state).copy()
         v_delta_state = (v_next_state - v_state).copy()
@@ -719,29 +734,3 @@ class SimpleLocalApproximationReplayMemory(BaseReplayMemory):
         mask = np.invert(done).astype(float).squeeze()
 
         return state, action, reward, next_state, mask
-
-        if len(self.v_buffer) > 0:
-            v_batch_size = int(self.v_ratio * batch_size)
-            batch_size = batch_size - v_batch_size
-
-            if batch_size == 0:
-                v_state, v_action, v_reward, v_next_state, v_done = self.sample_v(batch_size=v_batch_size)
-                return v_state, v_action, v_reward.squeeze(), v_next_state, v_done.squeeze()
-
-            if v_batch_size == 0:
-                state, action, reward, next_state, done = self.sample_r(batch_size=batch_size)
-                return state, action, reward.squeeze(), next_state, done.squeeze()
-
-            state, action, reward, next_state, done = self.sample_r(batch_size=batch_size)
-            v_state, v_action, v_reward, v_next_state, v_done = self.sample_v(batch_size=v_batch_size)
-        else:
-            state, action, reward, next_state, done = self.sample_r(batch_size=batch_size)
-            return state, action, reward.squeeze(), next_state, done.squeeze()
-
-        state = np.concatenate((state, v_state), axis=0)
-        action = np.concatenate((action, v_action), axis=0)
-        reward = np.concatenate((reward, v_reward), axis=0).squeeze()
-        next_state = np.concatenate((next_state, v_next_state), axis=0)
-        done = np.concatenate((done, v_done), axis=0).squeeze()
-
-        return state, action, reward, next_state, done
