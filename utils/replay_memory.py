@@ -688,11 +688,16 @@ class SimpleLocalApproximationReplayMemory(BaseReplayMemory):
 
         self.knn.fit(self.kmeans.cluster_centers_)
         nn_labels = self.knn.kneighbors(self.kmeans.cluster_centers_, return_distance=False)
-        nn_labels = nn_labels[:, 1]
+        # nn_labels = nn_labels[:, 1]
 
         self.nn = np.empty(shape=(len(nn_labels),), dtype=int)
         for n in range(len(nn_labels)):
-            self.nn[n] = np.where(shuffled_cluster_labels[:, 1] == nn_labels[n])[0][0]
+            tmp = np.where(shuffled_cluster_labels[:, 1] == nn_labels[n, 1])[0]
+            if len(tmp) > 0:
+                self.nn[n] = tmp[0]
+            else:
+                self.nn[n] = nn_labels[n, 0]
+            # self.nn[n] = np.where(shuffled_cluster_labels[:, 1] == nn_labels[n])[0][0]
         self.nn = shuffled_cluster_labels[self.nn, 0]
 
     def push_v(self, state, action, reward, next_state, done):
