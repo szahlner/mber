@@ -707,18 +707,19 @@ class SimpleLocalApproximationReplayMemory(BaseReplayMemory):
 
         for n in range(self.n_clusters):
             idx = np.where(predicted_clusters == n)[0]
-            o_ = self.buffer["state"][idx]
-            a_ = self.buffer["action"][idx]
-            r_ = self.buffer["reward"][idx]
-            o_2_ = self.buffer["next_state"][idx]
-            self.clusters_mu[n] = {
-                "state": np.mean(o_, axis=0), "action": np.mean(a_, axis=0),
-                "reward": np.mean(r_, axis=0), "next_state": np.mean(o_2_, axis=0),
-            }
-            self.clusters_std[n] = {
-                "state": np.std(o_, axis=0), "action": np.std(a_, axis=0),
-                "reward": np.std(r_, axis=0), "next_state": np.std(o_2_, axis=0),
-            }
+            if len(idx) > 0:
+                o_ = self.buffer["state"][idx]
+                a_ = self.buffer["action"][idx]
+                r_ = self.buffer["reward"][idx]
+                o_2_ = self.buffer["next_state"][idx]
+                self.clusters_mu[n] = {
+                    "state": np.mean(o_, axis=0), "action": np.mean(a_, axis=0),
+                    "reward": np.mean(r_, axis=0), "next_state": np.mean(o_2_, axis=0),
+                }
+                self.clusters_std[n] = {
+                    "state": np.std(o_, axis=0), "action": np.std(a_, axis=0),
+                    "reward": np.std(r_, axis=0), "next_state": np.std(o_2_, axis=0),
+                }
 
         self.knn.fit(self.kmeans.cluster_centers_)
         nn_labels = self.knn.kneighbors(self.kmeans.cluster_centers_, return_distance=False)
