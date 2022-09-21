@@ -2,6 +2,7 @@ import os
 import pickle
 import random
 import numpy as np
+import gym
 from utils.utils import termination_fn
 from utils.segment_tree import MinSegmentTree, SumSegmentTree
 from sklearn.neighbors import NearestNeighbors
@@ -661,10 +662,27 @@ class SimpleLocalApproximationReplayMemory(BaseReplayMemory):
             self.v_capacity = v_capacity
         self.v_buffer = BaseReplayMemory(self.v_capacity, seed, state_dim, action_dim)
 
+        self.n_clusters = args.epoch_length
         self.scaler = StandardScaler()
-        self.kmeans = MiniBatchKMeans(n_clusters=args.epoch_length, random_state=seed, batch_size=2048, reassignment_ratio=0)
+        self.kmeans = MiniBatchKMeans(n_clusters=self.n_clusters, random_state=seed, batch_size=2048, reassignment_ratio=0)
         self.knn = NearestNeighbors(n_neighbors=2)
         self.nn = None
+        self.clusters_mu = [{
+            "state": np.zeros(shape=(self.state_dim,)),
+            "action": np.zeros(shape=(self.action_dim,)),
+            "reward": np.zeros(shape=(1,)),
+            "next_state": np.zeros(shape=(self.state_dim,)),
+        } for _ in range(self.n_clusters)]
+        self.clusters_std = [{
+            "state": np.ones(shape=(self.state_dim,)),
+            "action": np.ones(shape=(self.action_dim,)),
+            "reward": np.ones(shape=(1,)),
+            "next_state": np.ones(shape=(self.state_dim,)),
+        } for _ in range(self.n_clusters)]
+
+        env = gym.make(env_name)
+        self.max_action = env.action_space.high
+        self.min_action = env.action_space.low
 
         self.v_ratio = v_ratio
         self.env_name = env_name
@@ -683,11 +701,30 @@ class SimpleLocalApproximationReplayMemory(BaseReplayMemory):
         z_space = np.concatenate((o, a), axis=-1)
         z_space_norm = self.scaler.transform(z_space)
 
-        cluster_labels = np.vstack((np.arange(len(z_space_norm)), self.kmeans.predict(z_space_norm))).T
-        shuffled_cluster_labels = np.random.permutation(cluster_labels)
+        predicted_clusters = self.kmeans.predict(z_space_norm)
+        # cluster_labels = np.vstack((np.arange(len(z_space_norm)), predicted_clusters)).T
+        # shuffled_cluster_labels = np.random.permutation(cluster_labels)
+
+        for n in range(self.n_clusters):
+            idx = np.where(predicted_clusters == n)[0]
+            o_ = self.buffer["state"][idx]
+            a_ = self.buffer["action"][idx]
+            r_ = self.buffer["reward"][idx]
+            o_2_ = self.buffer["next_state"][idx]
+            self.clusters_mu[n] = {
+                "state": np.mean(o_, axis=0), "action": np.mean(a_, axis=0),
+                "reward": np.mean(r_, axis=0), "next_state": np.mean(o_2_, axis=0),
+            }
+            self.clusters_std[n] = {
+                "state": np.std(o_, axis=0), "action": np.std(a_, axis=0),
+                "reward": np.std(r_, axis=0), "next_state": np.std(o_2_, axis=0),
+            }
 
         self.knn.fit(self.kmeans.cluster_centers_)
         nn_labels = self.knn.kneighbors(self.kmeans.cluster_centers_, return_distance=False)
+        self.nn = nn_labels[:, 1]
+
+        return
         # nn_labels = nn_labels[:, 1]
 
         self.nn = np.empty(shape=(len(nn_labels),), dtype=int)
@@ -719,10 +756,22 @@ class SimpleLocalApproximationReplayMemory(BaseReplayMemory):
         cluster_labels = self.kmeans.predict(z_space_norm)
         nn_indices = self.nn[cluster_labels]
 
-        v_state = self.buffer["state"][nn_indices]
-        v_action = self.buffer["action"][nn_indices]
-        v_reward = self.buffer["reward"][nn_indices]
-        v_next_state = self.buffer["next_state"][nn_indices]
+        v_state = np.empty(shape=(batch_size, self.state_dim))
+        v_action = np.empty(shape=(batch_size, self.action_dim))
+        v_reward = np.empty(shape=(batch_size, 1))
+        v_next_state = np.empty(shape=(batch_size, self.state_dim))
+        for n in range(batch_size):
+            mu, std = self.clusters_mu[n], self.clusters_std[n]
+            v_state[n] = mu["state"] + np.random.normal(size=mu["state"].shape) * std["state"]
+            v_action[n] = mu["action"] + np.random.normal(size=mu["action"].shape) * std["action"]
+            v_reward[n] = mu["reward"] + np.random.normal(size=mu["reward"].shape) * std["reward"]
+            v_next_state[n] = mu["next_state"] + np.random.normal(size=mu["next_state"].shape) * std["next_state"]
+        v_action = np.clip(v_action, self.min_action, self.max_action)
+
+        # v_state = self.buffer["state"][nn_indices]
+        # v_action = self.buffer["action"][nn_indices]
+        # v_reward = self.buffer["reward"][nn_indices]
+        # v_next_state = self.buffer["next_state"][nn_indices]
 
         delta_state = (next_state - state).copy()
         v_delta_state = (v_next_state - v_state).copy()
