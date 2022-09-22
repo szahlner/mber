@@ -665,7 +665,7 @@ class SimpleLocalApproximationReplayMemory(BaseReplayMemory):
         self.n_clusters = args.epoch_length
         self.scaler = StandardScaler()
         self.kmeans = MiniBatchKMeans(n_clusters=self.n_clusters, random_state=seed, batch_size=2048, reassignment_ratio=0)
-        # self.kmeans = KMeans(n_clusters=self.n_clusters, random_state=seed)
+        self.kmeans = KMeans(n_clusters=self.n_clusters, random_state=seed)
         self.knn = NearestNeighbors(n_neighbors=2)
         self.nn = None
         self.clusters_mu = [{
@@ -692,20 +692,20 @@ class SimpleLocalApproximationReplayMemory(BaseReplayMemory):
         self.seed = seed
 
     def update_clusters(self, o, a):
-        z_space = np.concatenate((o, a), axis=-1)
-        self.scaler.partial_fit(z_space)
-        z_space_norm = self.scaler.transform(z_space)
-        self.kmeans = self.kmeans.partial_fit(z_space_norm)
+        # z_space = np.concatenate((o, a), axis=-1)
+        # self.scaler.partial_fit(z_space)
+        # z_space_norm = self.scaler.transform(z_space)
+        # self.kmeans = self.kmeans.partial_fit(z_space_norm)
 
         o = self.buffer["state"][:len(self)]
         a = self.buffer["action"][:len(self)]
         z_space = np.concatenate((o, a), axis=-1)
-        z_space_norm = self.scaler.transform(z_space)
+        # z_space_norm = self.scaler.transform(z_space)
 
-        # z_space_norm = self.scaler.fit_transform(z_space)
-        # predicted_clusters = self.kmeans = self.kmeans.fit_predict(z_space_norm)
+        z_space_norm = self.scaler.fit_transform(z_space)
+        predicted_clusters = self.kmeans.fit_predict(z_space_norm)
 
-        predicted_clusters = self.kmeans.predict(z_space_norm)
+        # predicted_clusters = self.kmeans.predict(z_space_norm)
         # cluster_labels = np.vstack((np.arange(len(z_space_norm)), predicted_clusters)).T
         # shuffled_cluster_labels = np.random.permutation(cluster_labels)
 
