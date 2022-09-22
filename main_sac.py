@@ -233,8 +233,8 @@ def main(args):
     if args.slapp:
         o = memory.buffer["state"][:len(memory)]
         a = memory.buffer["action"][:len(memory)]
-        # r = memory.buffer["reward"][:args.start_steps]
-        # o_2 = memory.buffer["next_state"][:args.start_steps]
+        r = memory.buffer["reward"][:len(memory)]
+        o_2 = memory.buffer["next_state"][:len(memory)]
         # z_space = np.concatenate((o, a, r, o_2), axis=-1)
         # z_space = np.concatenate((o, a), axis=-1)
         # memory.scaler.partial_fit(z_space)
@@ -244,7 +244,7 @@ def main(args):
         # memory.nn = memory.knn.kneighbors(memory.kmeans.cluster_centers_, return_distance=False)
         # memory.nn = memory.nn[:, 1]
 
-        memory.update_clusters(o, a)
+        memory.update_clusters(o, a, r, o_2)
         # memory.update_clusters_()
 
         # o = memory.buffer["state"][:len(memory)]
@@ -401,8 +401,10 @@ def main(args):
         if args.slapp:
             o = memory.buffer["state"][total_numsteps - steps_taken:total_numsteps]
             a = memory.buffer["action"][total_numsteps - steps_taken:total_numsteps]
+            r = memory.buffer["reward"][total_numsteps - steps_taken:total_numsteps]
+            o_2 = memory.buffer["next_state"][total_numsteps - steps_taken:total_numsteps]
 
-            memory.update_clusters(o, a)
+            memory.update_clusters(o, a, r, o_2)
             # memory.update_clusters_()
 
         if args.nmer:
