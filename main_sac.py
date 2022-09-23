@@ -191,67 +191,12 @@ def main(args):
             state, action, reward, next_state, mask = episode_trajectory[t]
             memory.push(state, action, reward, next_state, mask)  # Append transition to memory
 
-        if args.slapp and False:
-            o = memory.buffer["state"][:args.start_steps]
-            a = memory.buffer["action"][:args.start_steps]
-            r = memory.buffer["reward"][:args.start_steps]
-            z_space = np.concatenate((o, a, r), axis=-1)
-            z_space_norm = memory.scaler.fit_transform(z_space)
-            memory.kmeans.partial_fit(z_space_norm)
-
-            if steps_taken > state_size + action_size and False:
-                o = memory.buffer["state"][total_numsteps - steps_taken:total_numsteps]
-                a = memory.buffer["action"][total_numsteps- steps_taken:total_numsteps]
-                o_2 = memory.buffer["next_state"][total_numsteps- steps_taken:total_numsteps]
-                r = memory.buffer["reward"][total_numsteps- steps_taken:total_numsteps]
-                o_diff_mean, o_diff_std = np.mean(o_2 - o, axis=0), np.std(o_2 - o, axis=0)
-
-                k = args.updates_per_step
-                mixin_param = np.random.uniform(size=(steps_taken * k, 1))
-                noise_param = np.random.normal(size=(steps_taken * k, 1)) * o_diff_std
-                o_new = np.tile(o, (k, 1)) + o_diff_mean * mixin_param + noise_param
-                # o_new = np.tile(o, (k, 1)) * mixin_param + (1 - mixin_param) * np.tile(o_2, (k, 1))
-                a_new = agent.select_action(o_new)  # RBFInterpolator(o, a)(o_new)
-
-                z_space = np.concatenate((o, a), axis=-1)
-                z = np.concatenate((o_new, a_new), axis=-1)
-
-                o_2_new = RBFInterpolator(z_space, o_2)(z)
-                r_new = RBFInterpolator(z_space, r)(z)
-                d_new = termination_fn(args.env_name, o_new, a_new, o_2_new)
-
-                idx = np.where(np.sum(np.logical_or(o_2_new > np.max(o_2, axis=0),
-                                                    o_2_new < np.min(o_2, axis=0)), axis=-1) == 0, True, False)
-
-                if idx.sum() > 0:
-                    o_new, a_new, r_new, o_2_new, d_new = o_new[idx], a_new[idx], r_new[idx], o_2_new[idx], d_new[idx]
-
-                    # Append transition to memory
-                    for t in range(len(o_new)):
-                        memory.push_v(o_new[t], a_new[t], float(r_new[t]), o_2_new[t], float(not d_new[t]))
-
     if args.slapp:
         o = memory.buffer["state"][:len(memory)]
         a = memory.buffer["action"][:len(memory)]
         r = memory.buffer["reward"][:len(memory)]
         o_2 = memory.buffer["next_state"][:len(memory)]
-        # z_space = np.concatenate((o, a, r, o_2), axis=-1)
-        # z_space = np.concatenate((o, a), axis=-1)
-        # memory.scaler.partial_fit(z_space)
-        # z_space_norm = memory.scaler.transform(z_space)
-        # memory.kmeans.partial_fit(z_space_norm)
-        # memory.knn.fit(memory.kmeans.cluster_centers_)
-        # memory.nn = memory.knn.kneighbors(memory.kmeans.cluster_centers_, return_distance=False)
-        # memory.nn = memory.nn[:, 1]
-
         memory.update_clusters(o, a, r, o_2)
-        # memory.update_clusters_()
-
-        # o = memory.buffer["state"][:len(memory)]
-        # a = memory.buffer["action"][:len(memory)]
-        # z_space = np.concatenate((o, a), axis=-1)
-        # cluster_labels = memory.kmeans.predict(z_space)
-        # memory.set_cluster_labels(cluster_labels)
 
     if args.nmer:
         memory.update_neighbours()
@@ -366,46 +311,12 @@ def main(args):
             state, action, reward, next_state, mask = episode_trajectory[t]
             memory.push(state, action, reward, next_state, mask)  # Append transition to memory
 
-        if args.slapp and False:
-            if steps_taken > state_size + action_size:
-                o = memory.buffer["state"][total_numsteps - steps_taken:total_numsteps]
-                a = memory.buffer["action"][total_numsteps- steps_taken:total_numsteps]
-                o_2 = memory.buffer["next_state"][total_numsteps- steps_taken:total_numsteps]
-                r = memory.buffer["reward"][total_numsteps- steps_taken:total_numsteps]
-                o_diff_mean, o_diff_std = np.mean(o_2 - o, axis=0), np.std(o_2 - o, axis=0)
-
-                k = args.updates_per_step
-                mixin_param = np.random.uniform(size=(steps_taken * k, 1))
-                noise_param = np.random.normal(size=(steps_taken * k, 1)) * o_diff_std
-                o_new = np.tile(o, (k, 1)) + o_diff_mean * mixin_param + noise_param
-                # o_new = np.tile(o, (k, 1)) * mixin_param + (1 - mixin_param) * np.tile(o_2, (k, 1))
-                a_new = agent.select_action(o_new)  # RBFInterpolator(o, a)(o_new)
-
-                z_space = np.concatenate((o, a), axis=-1)
-                z = np.concatenate((o_new, a_new), axis=-1)
-
-                o_2_new = RBFInterpolator(z_space, o_2)(z)
-                r_new = RBFInterpolator(z_space, r)(z)
-                d_new = termination_fn(args.env_name, o_new, a_new, o_2_new)
-
-                idx = np.where(np.sum(np.logical_or(o_2_new > np.max(o_2, axis=0),
-                                                    o_2_new < np.min(o_2, axis=0)), axis=-1) == 0, True, False)
-
-                if idx.sum() > 0:
-                    o_new, a_new, r_new, o_2_new, d_new = o_new[idx], a_new[idx], r_new[idx], o_2_new[idx], d_new[idx]
-
-                    # Append transition to memory
-                    for t in range(len(o_new)):
-                        memory.push_v(o_new[t], a_new[t], float(r_new[t]), o_2_new[t], float(not d_new[t]))
-
         if args.slapp:
             o = memory.buffer["state"][total_numsteps - steps_taken:total_numsteps]
             a = memory.buffer["action"][total_numsteps - steps_taken:total_numsteps]
             r = memory.buffer["reward"][total_numsteps - steps_taken:total_numsteps]
             o_2 = memory.buffer["next_state"][total_numsteps - steps_taken:total_numsteps]
-
             memory.update_clusters(o, a, r, o_2)
-            # memory.update_clusters_()
 
         if args.nmer:
             memory.update_neighbours()
