@@ -11,7 +11,6 @@ import json
 from policy.sac import SAC
 from torch.utils.tensorboard import SummaryWriter
 from collections import namedtuple
-from scipy.interpolate import RBFInterpolator
 
 
 def main(args):
@@ -26,17 +25,18 @@ def main(args):
         env_id = "Lift"
         env = GymWrapper(
             suite.make(
-                env_id=env_id,
+                env_id,
                 robots="IIWA14_extended",  # use Sawyer robot
                 use_camera_obs=False,  # do not use pixel observations
                 has_offscreen_renderer=False,  # not needed since not using pixel obs
-                has_renderer=True,  # make sure we can render to the screen
+                has_renderer=False,  # make sure we can render to the screen
                 reward_shaping=True,  # use dense rewards
                 control_freq=20,  # control should happen fast enough so that simulation looks smooth
                 horizon=1000,
                 controller_configs=load_controller_config(default_controller="OSC_POSE"),
             )
         )
+        env._max_episode_steps = 1000
     else:
         env = gym.make(args.env_name)
 
@@ -46,7 +46,24 @@ def main(args):
 
     env.seed(args.seed)
     env.action_space.seed(args.seed)
-    eval_env = gym.make(args.env_name)
+
+    if args.env_name == "IIWA14_extended":
+        env_id = "Lift"
+        eval_env = GymWrapper(
+            suite.make(
+                env_id,
+                robots="IIWA14_extended",  # use Sawyer robot
+                use_camera_obs=False,  # do not use pixel observations
+                has_offscreen_renderer=False,  # not needed since not using pixel obs
+                has_renderer=False,  # make sure we can render to the screen
+                reward_shaping=True,  # use dense rewards
+                control_freq=20,  # control should happen fast enough so that simulation looks smooth
+                horizon=1000,
+                controller_configs=load_controller_config(default_controller="OSC_POSE"),
+            )
+        )
+    else:
+        eval_env = gym.make(args.env_name)
 
     if args.env_name == "Ant-v2":
         from environment.ant_truncated import AntTruncatedV2
@@ -147,14 +164,11 @@ def main(args):
             action_size = np.prod(env.action_space.shape)
             memory = PerReplayMemory(args.replay_size, args.seed, state_dim=state_size, action_dim=action_size)
         elif args.slapp:
-            from utils.utils import termination_fn
             from utils.replay_memory import SimpleLocalApproximationReplayMemory
-            from sklearn.neighbors import NearestNeighbors
             state_size = np.prod(env.observation_space.shape)
-            action_size = np.prod(env.action_space.shape)
             memory = SimpleLocalApproximationReplayMemory(args.replay_size, args.seed,
-                                                          state_dim=state_size, action_dim=action_size,
-                                                          v_ratio=args.v_ratio, env_name=args.env_name, args=args)
+                                                          state_dim=state_size, action_space=env.action_space,
+                                                          env_name=args.env_name, args=args)
 
         else:
             from utils.replay_memory import ReplayMemory

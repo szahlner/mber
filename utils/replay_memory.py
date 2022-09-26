@@ -650,35 +650,24 @@ class PerNmerReplayMemory(PerReplayMemory):
 
 
 class SimpleLocalApproximationReplayMemory(BaseReplayMemory):
-    def __init__(self, capacity, seed, state_dim, action_dim,
-                 v_capacity=None, v_ratio=0.95, env_name="Hopper-v2", args=None):
-        super().__init__(capacity, seed, state_dim=state_dim, action_dim=action_dim)
+    def __init__(self, capacity, seed, state_dim, action_space, env_name="Hopper-v2", args=None, debug=False):
+        super().__init__(capacity, seed, state_dim=state_dim, action_dim=np.prod(action_space.shape))
 
         assert args is not None, "args must not be None"
-
-        if v_capacity is None:
-            self.v_capacity = args.updates_per_step * args.epoch_length
-        else:
-            self.v_capacity = v_capacity
-        self.v_buffer = BaseReplayMemory(self.v_capacity, seed, state_dim, action_dim)
 
         self.n_clusters = args.epoch_length
         self.scaler = StandardScaler()
         self.kmeans = MiniBatchKMeans(n_clusters=self.n_clusters, random_state=seed, batch_size=2048, reassignment_ratio=0)
-
         self.clusters = [StandardScaler() for _ in range(self.n_clusters)]
 
-        env = gym.make(env_name)
-        self.max_action = env.action_space.high
-        self.min_action = env.action_space.low
+        self.max_action = action_space.high
+        self.min_action = action_space.low
 
-        self.v_ratio = v_ratio
         self.env_name = env_name
         self.args = args
-        self.rollout_length = 0
         self.seed = seed
 
-        self.debug = False
+        self.debug = debug
         self.cluster_centers_kmeans = []
         self.cluster_centers = []
         self.timesteps = []
@@ -715,12 +704,6 @@ class SimpleLocalApproximationReplayMemory(BaseReplayMemory):
         z_space = np.concatenate((z_space, r, o_2), axis=-1)
         for n in range(len(labels)):
             self.clusters[labels[n]] = self.clusters[labels[n]].partial_fit(z_space[n].reshape(1, -1))
-
-    def push_v(self, state, action, reward, next_state, done):
-        self.v_buffer.push(state, action, reward, next_state, done)
-
-    def sample_v(self, batch_size):
-        return self.v_buffer.sample(batch_size=batch_size)
 
     def sample_r(self, batch_size):
         return super().sample(batch_size=batch_size)
