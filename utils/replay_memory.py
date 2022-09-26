@@ -678,6 +678,29 @@ class SimpleLocalApproximationReplayMemory(BaseReplayMemory):
         self.rollout_length = 0
         self.seed = seed
 
+        self.debug = True
+        self.cluster_centers_kmeans = []
+        self.cluster_centers = []
+        self.timesteps = []
+
+    def save_cluster_centers(self, timesteps, save_path):
+        self.cluster_centers_kmeans.append(self.kmeans.cluster_centers_.copy())
+        cc = np.empty(shape=(self.n_clusters, 2 * self.state_dim + 1 + self.action_dim))
+        for n in range(self.n_clusters):
+            cc[n] = self.clusters[n].mean_.copy()
+        self.cluster_centers.append(cc)
+        self.timesteps.append(timesteps)
+
+        data = {
+            "cluster_centers_kmeans": np.array(self.cluster_centers_kmeans),
+            "cluster_centers": np.array(self.cluster_centers),
+            "timesteps": np.array(self.timesteps),
+        }
+
+        save_path = os.path.join(save_path, "cluster_centers.pkl")
+        with open(save_path, 'wb') as f:
+            pickle.dump(data, f)
+
     def update_clusters(self, o, a, r, o_2):
         z_space = np.concatenate((o, a), axis=-1)
         self.scaler.partial_fit(z_space)

@@ -300,6 +300,10 @@ def main(args):
 
                 writer.add_scalar('avg_reward/test_timesteps', avg_reward_eval, total_numsteps)
 
+                if args.slapp:
+                    if memory.debug:
+                        memory.save_cluster_centers(total_numsteps, writer.log_dir)
+
                 print("----------------------------------------")
                 print("Timestep Eval - Test Episodes: {}, Avg. Reward: {}".format(episodes_eval, round(avg_reward_eval, 2)))
                 print("----------------------------------------")
