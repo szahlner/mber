@@ -678,12 +678,15 @@ class SimpleLocalApproximationReplayMemory(BaseReplayMemory):
         self.rollout_length = 0
         self.seed = seed
 
-        self.debug = True
+        self.debug = False
         self.cluster_centers_kmeans = []
         self.cluster_centers = []
         self.timesteps = []
 
     def save_cluster_centers(self, timesteps, save_path):
+        if not self.debug:
+            return
+
         self.cluster_centers_kmeans.append(self.kmeans.cluster_centers_.copy())
         cc = np.empty(shape=(self.n_clusters, 2 * self.state_dim + 1 + self.action_dim))
         for n in range(self.n_clusters):
