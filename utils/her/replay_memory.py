@@ -1,8 +1,10 @@
 import threading
-
 import gym
 import numpy as np
+import copy
 from mpi4py import MPI
+from sklearn.preprocessing import StandardScaler
+from sklearn.neighbors import NearestNeighbors
 
 
 class Normalizer:
@@ -242,12 +244,11 @@ class HerMbpoReplayMemory(HerReplayMemory):
 
         self.v_ratio = v_ratio
         self.rollout_length = 1
-        v_env_params = env_params
+        v_env_params = copy.copy(env_params)
         v_env_params["max_timesteps"] = self.rollout_length
-        # self.v_buffer = SimpleReplayMemory(env_params, buffer_size)  # HerReplayMemory(v_env_params, buffer_size, sample_func=sample_func, normalize=normalize)
-        self.v_buffer = HerReplayMemory(v_env_params, buffer_size, sample_func=sample_func, normalize=False)
 
-        self.r_buffer = SimpleReplayMemory(env_params, buffer_size)
+        self.v_buffer = HerReplayMemory(v_env_params, buffer_size, sample_func=sample_func, normalize=False)
+        self.r_buffer = SimpleReplayMemory(env_params, buffer_size, args=args, normalize=normalize)
 
         self.env = gym.make(args.env_name)
 
@@ -269,18 +270,20 @@ class HerMbpoReplayMemory(HerReplayMemory):
             self.buffers["actions"][idxs] = mb_actions
             self.n_transitions_stored += self.T * batch_size
 
-        # Reshape
-        mb_obs_next = mb_obs[:, 1:, :].reshape((self.T * batch_size, self.env_params["obs"]))
-        mb_obs = mb_obs[:, :-1, :].reshape((self.T * batch_size, self.env_params["obs"]))
-        mb_ag_next = mb_ag[:, 1:, :].reshape((self.T * batch_size, self.env_params["goal"]))
-        mb_ag = mb_ag[:, :-1, :].reshape((self.T * batch_size, self.env_params["goal"]))
-        mb_g = mb_g.reshape((self.T * batch_size, self.env_params["goal"]))
-        mb_actions = mb_actions.reshape((self.T * batch_size, self.env_params["action"]))
-        for n in range(len(mb_obs)):
-            self.r_buffer.push_transition([mb_obs[n], mb_obs_next[n], mb_ag[n], mb_ag_next[n], mb_g[n], mb_actions[n]])
+        self.r_buffer.push_episode(episode_batch)
 
-    def sample_r(self, batch_size):
-        return self.r_buffer.sample(batch_size)
+        # Reshape
+        # mb_obs_next = mb_obs[:, 1:, :].reshape((self.T * batch_size, self.env_params["obs"]))
+        # mb_obs = mb_obs[:, :-1, :].reshape((self.T * batch_size, self.env_params["obs"]))
+        # mb_ag_next = mb_ag[:, 1:, :].reshape((self.T * batch_size, self.env_params["goal"]))
+        # mb_ag = mb_ag[:, :-1, :].reshape((self.T * batch_size, self.env_params["goal"]))
+        # mb_g = mb_g.reshape((self.T * batch_size, self.env_params["goal"]))
+        # mb_actions = mb_actions.reshape((self.T * batch_size, self.env_params["action"]))
+        # for n in range(len(mb_obs)):
+        #    self.r_buffer.push_transition([mb_obs[n], mb_obs_next[n], mb_ag[n], mb_ag_next[n], mb_g[n], mb_actions[n]])
+
+    def sample_r(self, batch_size, return_transitions=False):
+        return self.r_buffer.sample(batch_size, return_transitions=return_transitions)
 
     def set_rollout_length(self, current_epoch):
         self.rollout_length = int(
@@ -306,48 +309,15 @@ class HerMbpoReplayMemory(HerReplayMemory):
 
         v_env_params = self.env_params
         v_env_params["max_timesteps"] = self.rollout_length
-        # self.v_buffer = SimpleReplayMemory(v_env_params, v_capacity)  # HerReplayMemory(v_env_params, v_capacity, sample_func=self.v_buffer.sample_func, normalize=self.v_buffer.normalize)
         self.v_buffer = HerReplayMemory(v_env_params, v_capacity,
                                         sample_func=self.v_buffer.sample_func, normalize=self.v_buffer.normalize)
 
         for n in range(len(temp_buffers["obs"])):
             self.v_buffer.push_episode([temp_buffers["obs"][n], temp_buffers["ag"][n],
                                         temp_buffers["g"][n], temp_buffers["actions"][n]])
-        return
-
-        for n in range(len(temp_buffers["obs"])):
-            self.v_buffer.push_transition([temp_buffers["obs"][n], temp_buffers["obs_next"][n],
-                                           temp_buffers["ag"][n], temp_buffers["ag_next"][n],
-                                           temp_buffers["g"][n], temp_buffers["actions"][n]])
 
     def push_v(self, episode_batch):
         self.v_buffer.push_episode(episode_batch)
-        return
-
-        mb_obs, mb_ag, mb_g, mb_actions = episode_batch
-        batch_size = mb_obs.shape[0]
-
-        # mb_obs_next =  mb_obs[:, 1:, :]
-        # mb_obs = mb_obs[:, :-1, :]
-        # mb_ag_next = mb_ag[:, 1:, :]
-        # mb_ag = mb_ag[:, :-1, :]
-
-        # for n in range(len(mb_obs)):
-        #     for k in range(self.rollout_length):
-        #         transition = [mb_obs[n][k], mb_obs_next[n][k], mb_ag[n][k], mb_ag_next[n][k], mb_g[n][k], mb_actions[n][k]]
-        #         self.v_buffer.push_transition(transition)
-        # self.v_buffer.push_episode(episode_batch)
-
-        # Reshape
-        mb_obs_next = mb_obs[:, 1:, :].reshape((self.T * batch_size, self.env_params["obs"]))
-        mb_obs = mb_obs[:, :-1, :].reshape((self.T * batch_size, self.env_params["obs"]))
-        mb_ag_next = mb_ag[:, 1:, :].reshape((self.T * batch_size, self.env_params["goal"]))
-        mb_ag = mb_ag[:, :-1, :].reshape((self.T * batch_size, self.env_params["goal"]))
-        mb_g = mb_g.reshape((self.T * batch_size, self.env_params["goal"]))
-        mb_actions = mb_actions.reshape((self.T * batch_size, self.env_params["action"]))
-
-        for n in range(len(mb_obs)):
-            self.v_buffer.push_transition([mb_obs[n], mb_obs_next[n], mb_ag[n], mb_ag_next[n], mb_g[n], mb_actions[n]])
 
     # Sample the data from the replay buffer
     def sample(self, batch_size):
@@ -365,16 +335,6 @@ class HerMbpoReplayMemory(HerReplayMemory):
                     o_2, g_2 = v_obs_next[:, :self.env_params["obs"]], v_obs_next[:, self.env_params["obs"]:]
                     o_2_norm, g_2_norm = self.o_norm.normalize(o_2), self.g_norm.normalize(g_2)
                     v_obs_next = np.concatenate((o_2_norm, g_2_norm), axis=-1)
-                # v_transitions = self.v_buffer.sample(v_batch_size)
-                # v_rewards = self.env.compute_reward(v_transitions["ag"], v_transitions["g"], None)
-                # v_done = np.ones_like(v_rewards)
-                # if self.normalize:
-                #     v_transitions["obs"] = self.o_norm.normalize(v_transitions["obs"])
-                #     v_transitions["g"] = self.g_norm.normalize(v_transitions["g"])
-                #     v_transitions["obs_next"] = self.o_norm.normalize(v_transitions["obs_next"])
-                # v_obs = np.concatenate((v_transitions["obs"], v_transitions["g"]), axis=-1)
-                # v_actions = v_transitions["actions"]
-                # v_obs_next = np.concatenate((v_transitions["obs_next"], v_transitions["g"]), axis=-1)
                 return v_obs, v_actions, v_rewards, v_obs_next, v_done
 
             if v_batch_size == 0:
@@ -390,17 +350,6 @@ class HerMbpoReplayMemory(HerReplayMemory):
                 o_2, g_2 = v_obs_next[:, :self.env_params["obs"]], v_obs_next[:, self.env_params["obs"]:]
                 o_2_norm, g_2_norm = self.o_norm.normalize(o_2), self.g_norm.normalize(g_2)
                 v_obs_next = np.concatenate((o_2_norm, g_2_norm), axis=-1)
-            # v_transitions = self.v_buffer.sample(v_batch_size)
-            # v_rewards = self.env.compute_reward(v_transitions["ag"], v_transitions["g"], None)
-            # v_done = np.ones_like(v_rewards)
-            # if self.normalize:
-            #     v_transitions["obs"] = self.o_norm.normalize(v_transitions["obs"])
-            #     v_transitions["g"] = self.g_norm.normalize(v_transitions["g"])
-            #     v_transitions["obs_next"] = self.o_norm.normalize(v_transitions["obs_next"])
-            # v_obs = np.concatenate((v_transitions["obs"], v_transitions["g"]), axis=-1)
-            # v_actions = v_transitions["actions"]
-            # v_obs_next = np.concatenate((v_transitions["obs_next"], v_transitions["g"]), axis=-1)
-
             obs, actions, rewards, obs_next, done = super().sample(batch_size)
         else:
             obs, actions, rewards, obs_next, done = super().sample(batch_size)
@@ -416,7 +365,9 @@ class HerMbpoReplayMemory(HerReplayMemory):
 
 
 class SimpleReplayMemory:
-    def __init__(self, env_params, buffer_size):
+    def __init__(self, env_params, buffer_size, args=None, normalize=True):
+        assert args is not None, "args must not be None"
+
         self.env_params = env_params
 
         # Memory management
@@ -437,6 +388,45 @@ class SimpleReplayMemory:
         # Thread lock
         self.lock = threading.Lock()
 
+        # Normalizer
+        self.normalize = normalize
+        if self.normalize:
+            self.o_norm = Normalizer(self.env_params["obs"])
+            self.g_norm = Normalizer(self.env_params["goal"])
+
+        self.args = args
+        self.T = env_params["max_timesteps"]
+        self.env = gym.make(args.env_name)
+
+    def _update_normalizer(self, episode_batch):
+        mb_obs, mb_ag, mb_g, _ = episode_batch
+
+        # update
+        self.o_norm.update(mb_obs)
+        self.g_norm.update(mb_g)
+        self.g_norm.update(mb_ag)
+
+        # recompute the stats
+        self.o_norm.recompute_stats()
+        self.g_norm.recompute_stats()
+
+    def push_episode(self, episode_batch):
+        mb_obs, mb_ag, mb_g, mb_actions = episode_batch
+        batch_size = mb_obs.shape[0]
+
+        if self.normalize:
+            self._update_normalizer(episode_batch)
+
+        # Reshape
+        mb_obs_next = mb_obs[:, 1:, :].reshape((self.T * batch_size, self.env_params["obs"]))
+        mb_obs = mb_obs[:, :-1, :].reshape((self.T * batch_size, self.env_params["obs"]))
+        mb_ag_next = mb_ag[:, 1:, :].reshape((self.T * batch_size, self.env_params["goal"]))
+        mb_ag = mb_ag[:, :-1, :].reshape((self.T * batch_size, self.env_params["goal"]))
+        mb_g = mb_g.reshape((self.T * batch_size, self.env_params["goal"]))
+        mb_actions = mb_actions.reshape((self.T * batch_size, self.env_params["action"]))
+        for n in range(len(mb_obs)):
+            self.push_transition([mb_obs[n], mb_obs_next[n], mb_ag[n], mb_ag_next[n], mb_g[n], mb_actions[n]])
+
     # Store the episode
     def push_transition(self, transition):
         obs, obs_next, ag, ag_next, g, actions = transition
@@ -453,7 +443,7 @@ class SimpleReplayMemory:
         self.current_size = min(self.current_size + 1, self.max_size)
 
     # Sample the data from the replay buffer
-    def sample(self, batch_size):
+    def sample(self, batch_size, return_transitions=False):
         idx = np.random.randint(0, self.current_size, size=batch_size)
 
         transitions = {
@@ -465,7 +455,95 @@ class SimpleReplayMemory:
             "actions": self.buffers["actions"][idx],
         }
 
-        return transitions
+        if return_transitions:
+            return transitions
+
+        if self.normalize:
+            o, g = self.o_norm.normalize(transitions["obs"]), self.g_norm.normalize(transitions["g"])
+            o_2 = self.o_norm.normalize(transitions["obs_next"])
+        else:
+            o, g, o_2 = transitions["obs"], transitions["g"], transitions["obs_next"]
+        obs = np.concatenate((o, g), axis=-1)
+        actions = transitions["actions"]
+        rewards = self.env.compute_reward(transitions["ag_next"], transitions["g"], None)
+        obs_next = np.concatenate((o_2, g), axis=-1)
+        done = np.ones_like(rewards)
+
+        return obs, actions, rewards, obs_next, done
 
     def __len__(self):
         return self.current_size
+
+
+class HerNmerReplayMemory(SimpleReplayMemory):
+    def __init__(self, env_params, buffer_size, normalize=False, args=None, k_neighbours=10):
+        super().__init__(env_params, buffer_size, args=args, normalize=normalize)
+
+        assert args is not None, "args must not be None"
+
+        self.args = args
+        # self.r_buffer = SimpleReplayMemory(env_params, buffer_size)
+        self.env = gym.make(args.env_name)
+
+        # Interpolation settings
+        self.k_neighbours = k_neighbours
+        self.nn_indices = None
+
+    def update_neighbours(self):
+        # Get whole buffer
+        state = self.buffers["obs"][:self.current_size]
+        action = self.buffers["actions"][:self.current_size]
+
+        # Construct Z-space
+        z_space = np.concatenate((state, action), axis=-1)
+        z_space_norm = StandardScaler(with_mean=False).fit_transform(z_space)
+
+        # NearestNeighbors - object
+        k_nn = NearestNeighbors(n_neighbors=self.k_neighbours).fit(z_space_norm)
+        self.nn_indices = k_nn.kneighbors(z_space_norm, return_distance=False)
+
+    # Sample the data from the replay buffer
+    def sample(self, batch_size, return_transitions=False):
+        assert self.nn_indices is not None, "Memory not prepared yet! Call .update_neighbours()"
+
+        # Sample
+        sample_indices = np.random.randint(len(self), size=batch_size)
+        nn_indices = self.nn_indices[sample_indices].copy()
+
+        # Remove itself, shuffle and chose
+        nn_indices = nn_indices[:, 1:]
+        indices = np.random.rand(*nn_indices.shape).argsort(axis=1)
+        nn_indices = np.take_along_axis(nn_indices, indices, axis=1)
+        nn_indices = nn_indices[:, 0]
+
+        # Actually sample
+        state, ag = self.buffers["obs"][sample_indices], self.buffers["ag"][sample_indices]
+        next_state, next_ag = self.buffers["obs_next"][sample_indices], self.buffers["ag_next"][sample_indices]
+        action, g = self.buffers["actions"][sample_indices], self.buffers["g"][sample_indices]
+
+        nn_state, nn_ag = self.buffers["obs"][nn_indices], self.buffers["ag"][nn_indices]
+        nn_next_state, nn_next_ag = self.buffers["obs_next"][nn_indices], self.buffers["ag_next"][nn_indices]
+        nn_action, nn_g = self.buffers["actions"][nn_indices], self.buffers["g"][nn_indices]
+
+        delta_state = (next_state - state).copy()
+        delta_ag = (next_ag - ag).copy()
+        nn_delta_state = (nn_next_state - nn_state).copy()
+        nn_delta_ag = (nn_next_ag - nn_ag).copy()
+
+        # Linearly interpolate sample and neighbor points
+        mixing_param = np.random.uniform(size=(len(state), 1))
+        state = state * mixing_param + nn_state * (1 - mixing_param)
+        action = action * mixing_param + nn_action * (1 - mixing_param)
+        delta_state = delta_state * mixing_param + nn_delta_state * (1 - mixing_param)
+        next_state = state + delta_state
+        delta_ag = delta_ag * mixing_param + nn_delta_ag * (1 - mixing_param)
+        next_ag = ag + delta_ag
+        g = g * mixing_param + nn_g * (1 - mixing_param)
+
+        reward = self.env.compute_reward(next_ag, g, None)
+        mask = np.ones_like(reward)
+
+        state = np.concatenate((state, g), axis=-1)
+        next_state = np.concatenate((next_state, g), axis=-1)
+
+        return state, action, reward, next_state, mask

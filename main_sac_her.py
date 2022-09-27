@@ -111,9 +111,12 @@ def main(args):
             sampler = HerSampler("future", args.her_replay_k, env.compute_reward)
             memory = HerReplayMemory(env_params, args.replay_size,
                                      sample_func=sampler.sample_her_transitions, normalize=args.her_normalize)
+        elif args.nmer:
+            from utils.her.replay_memory import HerNmerReplayMemory
+            memory = HerNmerReplayMemory(env_params, args.replay_size, args=args, normalize=args.her_normalize)
         else:
-            from utils.replay_memory import HerReplayMemory
-            memory = HerReplayMemory(args.replay_size, args.seed)
+            from utils.her.replay_memory import SimpleReplayMemory
+            memory = SimpleReplayMemory(env_params, args.replay_size, args=args, normalize=args.her_normalize)
 
     # Exploration Loop
     total_numsteps = 0
@@ -141,26 +144,21 @@ def main(args):
 
         # Fill up replay memory
         steps_taken = len(episode_trajectory)
-
-        if args.her:
-            o, ag, g, a = [], [], [], []
+        o, ag, g, a = [], [], [], []
 
         # Normal experience replay
         for t in range(steps_taken):
             state, action, reward, next_state, mask = episode_trajectory[t]
             # Append transition to memory
-            if args.her:
-                o.append(state["observation"]), ag.append(state["achieved_goal"])
-                g.append(state["desired_goal"]), a.append(action)
-            else:
-                memory.push(state=state["observation"], state_ag=state["achieved_goal"], state_g=state["desired_goal"],
-                            action=action, reward=reward, done=mask, next_state=next_state["observation"],
-                            next_state_ag=next_state["achieved_goal"], next_state_g=next_state["desired_goal"])
+            o.append(state["observation"]), ag.append(state["achieved_goal"])
+            g.append(state["desired_goal"]), a.append(action)
 
-        if args.her:
-            o.append(next_state["observation"]), ag.append(next_state["achieved_goal"])
-            o, ag, g, a = np.array([o]), np.array([ag]), np.array([g]), np.array([a])
-            memory.push_episode([o, ag, g, a])
+        o.append(next_state["observation"]), ag.append(next_state["achieved_goal"])
+        o, ag, g, a = np.array([o]), np.array([ag]), np.array([g]), np.array([a])
+        memory.push_episode([o, ag, g, a])
+
+    if args.nmer:
+        memory.update_neighbours()
 
     # Training Loop
     total_numsteps = 0
@@ -186,7 +184,7 @@ def main(args):
             if args.model_based and total_numsteps % args.update_env_model == 0:
                 # Get real samples from environment
                 batch_size = max(len(memory), 10000)
-                transitions = memory.sample_r(batch_size=batch_size)
+                transitions = memory.sample_r(batch_size=batch_size, return_transitions=True)
 
                 inputs = np.concatenate((transitions["obs"], transitions["ag"], transitions["actions"]), axis=-1)
                 # Difference
@@ -204,7 +202,7 @@ def main(args):
 
                 # Rollout the environment model
                 # o, o_ag, o_g, _, _, _, _, _, _ = memory.sample_r(batch_size=args.n_rollout_samples)
-                transitions = memory.sample_r(batch_size=args.n_rollout_samples)
+                transitions = memory.sample_r(batch_size=args.n_rollout_samples, return_transitions=True)
                 o, o_ag, o_g = transitions["obs"], transitions["ag"], transitions["g"]
 
                 # Preallocate
@@ -297,25 +295,21 @@ def main(args):
         # Fill up replay memory
         steps_taken = len(episode_trajectory)
 
-        if args.her:
-            o, ag, g, a = [], [], [], []
+        o, ag, g, a = [], [], [], []
 
         # Normal experience replay
         for t in range(steps_taken):
             state, action, reward, next_state, mask = episode_trajectory[t]
             # Append transition to memory
-            if args.her:
-                o.append(state["observation"]), ag.append(state["achieved_goal"])
-                g.append(state["desired_goal"]), a.append(action)
-            else:
-                memory.push(state=state["observation"], state_ag=state["achieved_goal"], state_g=state["desired_goal"],
-                            action=action, reward=reward, done=mask, next_state=next_state["observation"],
-                            next_state_ag=next_state["achieved_goal"], next_state_g=next_state["desired_goal"])
+            o.append(state["observation"]), ag.append(state["achieved_goal"])
+            g.append(state["desired_goal"]), a.append(action)
 
-        if args.her:
-            o.append(next_state["observation"]), ag.append(next_state["achieved_goal"])
-            o, ag, g, a = np.array([o]), np.array([ag]), np.array([g]), np.array([a])
-            memory.push_episode([o, ag, g, a])
+        o.append(next_state["observation"]), ag.append(next_state["achieved_goal"])
+        o, ag, g, a = np.array([o]), np.array([ag]), np.array([g]), np.array([a])
+        memory.push_episode([o, ag, g, a])
+
+        if args.nmer:
+            memory.update_neighbours()
 
         if len(memory) > args.batch_size and args.n_update_batches > 0:
             # Number of updates per step in environment
