@@ -1,10 +1,13 @@
+import os
 import threading
 import gym
 import numpy as np
+import pickle
 import copy
 from mpi4py import MPI
 from sklearn.preprocessing import StandardScaler
 from sklearn.neighbors import NearestNeighbors
+from sklearn.cluster import MiniBatchKMeans
 
 
 class Normalizer:
@@ -479,12 +482,6 @@ class HerNmerReplayMemory(SimpleReplayMemory):
     def __init__(self, env_params, buffer_size, normalize=False, args=None, k_neighbours=10):
         super().__init__(env_params, buffer_size, args=args, normalize=normalize)
 
-        assert args is not None, "args must not be None"
-
-        self.args = args
-        # self.r_buffer = SimpleReplayMemory(env_params, buffer_size)
-        self.env = gym.make(args.env_name)
-
         # Interpolation settings
         self.k_neighbours = k_neighbours
         self.nn_indices = None
@@ -539,6 +536,112 @@ class HerNmerReplayMemory(SimpleReplayMemory):
         delta_ag = delta_ag * mixing_param + nn_delta_ag * (1 - mixing_param)
         next_ag = ag + delta_ag
         g = g * mixing_param + nn_g * (1 - mixing_param)
+
+        reward = self.env.compute_reward(next_ag, g, None)
+        mask = np.ones_like(reward)
+
+        state = np.concatenate((state, g), axis=-1)
+        next_state = np.concatenate((next_state, g), axis=-1)
+
+        return state, action, reward, next_state, mask
+
+
+class HerSlappReplayMemory(SimpleReplayMemory):
+    def __init__(self, env_params, buffer_size, normalize=False, args=None, debug=False):
+        super().__init__(env_params, buffer_size, args=args, normalize=normalize)
+
+        # Cluster settings
+        self.n_clusters = self.T
+        self.scaler = StandardScaler()
+        self.kmeans = MiniBatchKMeans(n_clusters=self.n_clusters, random_state=args.seed, batch_size=2048, reassignment_ratio=0)
+        self.clusters = [StandardScaler() for _ in range(self.n_clusters)]
+
+        self.max_action = self.env.action_space.high
+        self.min_action = self.env.action_space.low
+
+        self.debug = debug
+        self.cluster_centers_kmeans = []
+        self.cluster_centers = []
+        self.timesteps = []
+
+    def save_cluster_centers(self, timesteps, save_path):
+        if not self.debug:
+            return
+
+        self.cluster_centers_kmeans.append(self.kmeans.cluster_centers_.copy())
+        cc = np.empty(shape=(self.n_clusters, 2 * self.env_params["obs"] + self.env_params["action"] + 3 * self.env_params["goal"]))
+        for n in range(self.n_clusters):
+            cc[n] = self.clusters[n].mean_.copy()
+        self.cluster_centers.append(cc)
+        self.timesteps.append(timesteps)
+
+        data = {
+            "cluster_centers_kmeans": np.array(self.cluster_centers_kmeans),
+            "cluster_centers": np.array(self.cluster_centers),
+            "timesteps": np.array(self.timesteps),
+        }
+
+        save_path = os.path.join(save_path, "cluster_centers.pkl")
+        with open(save_path, 'wb') as f:
+            pickle.dump(data, f)
+
+    def update_clusters(self, o, ag, a, o_2, ag_2, g):
+        z_space = np.concatenate((o, a), axis=-1)
+        self.scaler.partial_fit(z_space)
+        z_space_norm = self.scaler.transform(z_space)
+        self.kmeans = self.kmeans.partial_fit(z_space_norm)
+
+        # max startup steps, else max max_timesteps
+        labels = self.kmeans.labels_
+        z_space = np.concatenate((z_space, ag, o_2, ag_2, g), axis=-1)
+        for n in range(len(labels)):
+            self.clusters[labels[n]] = self.clusters[labels[n]].partial_fit(z_space[n].reshape(1, -1))
+
+    # Sample the data from the replay buffer
+    def sample(self, batch_size, return_transitions=False):
+        # Actually sample
+        sample_indices = np.random.randint(len(self), size=batch_size)
+
+        state, ag = self.buffers["obs"][sample_indices], self.buffers["ag"][sample_indices]
+        next_state, next_ag = self.buffers["obs_next"][sample_indices], self.buffers["ag_next"][sample_indices]
+        action, g = self.buffers["actions"][sample_indices], self.buffers["g"][sample_indices]
+
+        z_space = np.concatenate((state, action), axis=-1)
+        z_space_norm = self.scaler.transform(z_space)
+        cluster_labels = self.kmeans.predict(z_space_norm)
+
+        obs_dim, action_dim, g_dim = self.env_params["obs"], self.env_params["action"], self.env_params["goal"]
+
+        v_state = np.empty(shape=(batch_size, obs_dim))
+        v_ag = np.empty(shape=(batch_size, g_dim))
+        v_action = np.empty(shape=(batch_size, action_dim))
+        v_next_state = np.empty(shape=(batch_size, obs_dim))
+        v_next_ag = np.empty(shape=(batch_size, g_dim))
+        v_g = np.empty(shape=(batch_size, g_dim))
+        for n in range(batch_size):
+            mu, std = self.clusters[cluster_labels[n]].mean_, self.clusters[cluster_labels[n]].scale_ * 0.01
+            v_state[n] = mu[:obs_dim] + np.random.normal(size=mu[:obs_dim].shape) * std[:obs_dim]
+            v_action[n] = mu[obs_dim:obs_dim + action_dim] + np.random.normal(size=mu[obs_dim:obs_dim + action_dim].shape) * std[obs_dim:obs_dim + action_dim]
+            v_ag[n] = mu[obs_dim + action_dim:obs_dim + action_dim + g_dim] + np.random.normal(size=mu[obs_dim + action_dim:obs_dim + action_dim + g_dim].shape) * std[obs_dim + action_dim:obs_dim + action_dim + g_dim]
+            v_next_state[n] = mu[obs_dim + action_dim + g_dim:2 * obs_dim + action_dim + g_dim] + np.random.normal(size=mu[obs_dim + action_dim + g_dim:2 * obs_dim + action_dim + g_dim].shape) * std[obs_dim + action_dim + g_dim:2 * obs_dim + action_dim + g_dim]
+            v_next_ag[n] = mu[2 * obs_dim + action_dim + g_dim:2 * obs_dim + action_dim + 2 * g_dim] + np.random.normal(size=mu[2 * obs_dim + action_dim + g_dim:2 * obs_dim + action_dim + 2 * g_dim].shape) * std[2 * obs_dim + action_dim + g_dim:2 * obs_dim + action_dim + 2 * g_dim]
+            v_g[n] = mu[-g_dim:] + np.random.normal(size=mu[-g_dim:].shape) * std[-g_dim:]
+        v_action = np.clip(v_action, self.min_action, self.max_action)
+
+        delta_state = (next_state - state).copy()
+        delta_ag = (next_ag - ag).copy()
+        v_delta_state = (v_next_state - v_state).copy()
+        v_delta_ag = (v_next_ag - v_ag).copy()
+
+        # Linearly interpolate sample and neighbor points
+        mixing_param = np.random.uniform(size=(len(state), 1))
+        state = state * mixing_param + v_state * (1 - mixing_param)
+        action = action * mixing_param + v_action * (1 - mixing_param)
+        delta_state = delta_state * mixing_param + v_delta_state * (1 - mixing_param)
+        next_state = state + delta_state
+        delta_ag = delta_ag * mixing_param + v_delta_ag * (1 - mixing_param)
+        next_ag = ag + delta_ag
+        g = g * mixing_param + v_g * (1 - mixing_param)
 
         reward = self.env.compute_reward(next_ag, g, None)
         mask = np.ones_like(reward)

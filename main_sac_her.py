@@ -114,6 +114,9 @@ def main(args):
         elif args.nmer:
             from utils.her.replay_memory import HerNmerReplayMemory
             memory = HerNmerReplayMemory(env_params, args.replay_size, args=args, normalize=args.her_normalize)
+        elif args.slapp:
+            from utils.her.replay_memory import HerSlappReplayMemory
+            memory = HerSlappReplayMemory(env_params, args.replay_size, args=args, normalize=args.her_normalize)
         else:
             from utils.her.replay_memory import SimpleReplayMemory
             memory = SimpleReplayMemory(env_params, args.replay_size, args=args, normalize=args.her_normalize)
@@ -156,6 +159,15 @@ def main(args):
         o.append(next_state["observation"]), ag.append(next_state["achieved_goal"])
         o, ag, g, a = np.array([o]), np.array([ag]), np.array([g]), np.array([a])
         memory.push_episode([o, ag, g, a])
+
+    if args.slapp:
+        o = memory.buffers["obs"][:len(memory)]
+        ag = memory.buffers["ag"][:len(memory)]
+        a = memory.buffers["actions"][:len(memory)]
+        o_2 = memory.buffers["obs_next"][:len(memory)]
+        ag_2 = memory.buffers["ag_next"][:len(memory)]
+        g = memory.buffers["g"][:len(memory)]
+        memory.update_clusters(o, ag, a, o_2, ag_2, g)
 
     if args.nmer:
         memory.update_neighbours()
@@ -288,6 +300,9 @@ def main(args):
                 writer.add_scalar('avg_reward/test_timesteps', avg_reward_eval, total_numsteps)
                 writer.add_scalar('avg_reward/test_success_rate', total_success_rate, total_numsteps)
 
+                if args.slapp:
+                    memory.save_cluster_centers(total_numsteps, writer.log_dir)
+
                 print("----------------------------------------")
                 print("Timestep Eval - Test Episodes: {}, Avg. Reward: {}, Avg. Success: {}".format(episodes_eval, round(avg_reward_eval, 2), round(total_success_rate, 3)))
                 print("----------------------------------------")
@@ -307,6 +322,15 @@ def main(args):
         o.append(next_state["observation"]), ag.append(next_state["achieved_goal"])
         o, ag, g, a = np.array([o]), np.array([ag]), np.array([g]), np.array([a])
         memory.push_episode([o, ag, g, a])
+
+        if args.slapp:
+            o = memory.buffers["obs"][total_numsteps - steps_taken:total_numsteps]
+            ag = memory.buffers["ag"][total_numsteps - steps_taken:total_numsteps]
+            a = memory.buffers["actions"][total_numsteps - steps_taken:total_numsteps]
+            o_2 = memory.buffers["obs_next"][total_numsteps - steps_taken:total_numsteps]
+            ag_2 = memory.buffers["ag_next"][total_numsteps - steps_taken:total_numsteps]
+            g = memory.buffers["g"][total_numsteps - steps_taken:total_numsteps]
+            memory.update_clusters(o, ag, a, o_2, ag_2, g)
 
         if args.nmer:
             memory.update_neighbours()
