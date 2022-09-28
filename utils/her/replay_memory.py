@@ -540,6 +540,10 @@ class HerNmerReplayMemory(SimpleReplayMemory):
         reward = self.env.compute_reward(next_ag, g, None)
         mask = np.ones_like(reward)
 
+        if self.normalize:
+            state, g = self.o_norm.normalize(state), self.g_norm.normalize(g)
+            next_state = self.o_norm.normalize(next_state)
+
         state = np.concatenate((state, g), axis=-1)
         next_state = np.concatenate((next_state, g), axis=-1)
 
@@ -645,6 +649,10 @@ class HerSlappReplayMemory(SimpleReplayMemory):
 
         reward = self.env.compute_reward(next_ag, g, None)
         mask = np.ones_like(reward)
+
+        if self.normalize:
+            state, g = self.o_norm.normalize(state), self.g_norm.normalize(g)
+            next_state = self.o_norm.normalize(next_state)
 
         state = np.concatenate((state, g), axis=-1)
         next_state = np.concatenate((next_state, g), axis=-1)
