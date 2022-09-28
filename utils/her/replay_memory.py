@@ -275,16 +275,6 @@ class HerMbpoReplayMemory(HerReplayMemory):
 
         self.r_buffer.push_episode(episode_batch)
 
-        # Reshape
-        # mb_obs_next = mb_obs[:, 1:, :].reshape((self.T * batch_size, self.env_params["obs"]))
-        # mb_obs = mb_obs[:, :-1, :].reshape((self.T * batch_size, self.env_params["obs"]))
-        # mb_ag_next = mb_ag[:, 1:, :].reshape((self.T * batch_size, self.env_params["goal"]))
-        # mb_ag = mb_ag[:, :-1, :].reshape((self.T * batch_size, self.env_params["goal"]))
-        # mb_g = mb_g.reshape((self.T * batch_size, self.env_params["goal"]))
-        # mb_actions = mb_actions.reshape((self.T * batch_size, self.env_params["action"]))
-        # for n in range(len(mb_obs)):
-        #    self.r_buffer.push_transition([mb_obs[n], mb_obs_next[n], mb_ag[n], mb_ag_next[n], mb_g[n], mb_actions[n]])
-
     def sample_r(self, batch_size, return_transitions=False):
         return self.r_buffer.sample(batch_size, return_transitions=return_transitions)
 
