@@ -80,7 +80,7 @@ def main(args):
 
     # Tensorboard
     writer = SummaryWriter(
-        "runs/{}_SAC_{}_{}_{}{}{}{}{}_vr{}_ur{}{}{}".format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
+        "runs/{}_SAC_{}_{}_{}{}{}{}{}_vr{}_ur{}{}_nub{}".format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
                                                           args.env_name,
                                                           args.policy,
                                                           args.seed,
