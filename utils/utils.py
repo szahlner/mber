@@ -120,11 +120,11 @@ def get_predicted_states(model, state, action, env_name, deterministic=False):
     return new_reward, new_next_state, new_done
 
 
-def get_predicted_states_her(model, state, g, action, env_params, deterministic=False):
-    inputs = np.concatenate((state, g, action), axis=-1)
+def get_predicted_states_her(model, state, ag, g, action, env_params, deterministic=False):
+    inputs = np.concatenate((state, ag, g, action), axis=-1)
 
     ensemble_model_means, ensemble_model_vars = model.predict(inputs)
-    ensemble_model_means += np.concatenate((state, g), axis=-1)
+    ensemble_model_means += np.concatenate((state, ag, g), axis=-1)
 
     if deterministic:
         ensemble_samples = ensemble_model_means
@@ -137,7 +137,7 @@ def get_predicted_states_her(model, state, g, action, env_params, deterministic=
     batch_idxes = np.arange(0, batch_size)
 
     samples = ensemble_samples[model_idxes, batch_idxes]
-    new_next_state, new_next_state_ag = samples[:, :env_params["obs"]], samples[:, env_params["obs"]:]
+    new_next_state, new_next_state_ag = samples[:, :env_params["obs"]], samples[:, env_params["obs"]:env_params["obs"] + env_params["goal"]]
 
     return new_next_state, new_next_state_ag
 

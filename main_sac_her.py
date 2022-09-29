@@ -40,7 +40,7 @@ def main(args):
     if args.model_based:
         from utils.utils import get_predicted_states_her
 
-        state_size = env_params["obs"] + env_params["goal"]
+        state_size = env_params["obs"] + 2 * env_params["goal"]
         action_size = env_params["action"]
 
         if args.deterministic_model:
@@ -200,9 +200,9 @@ def main(args):
                 batch_size = max(len(memory), 10000)
                 transitions = memory.sample_r(batch_size=batch_size, return_transitions=True)
 
-                inputs = np.concatenate((transitions["obs"], transitions["g"], transitions["actions"]), axis=-1)
+                inputs = np.concatenate((transitions["obs"], transitions["ag"], transitions["g"], transitions["actions"]), axis=-1)
                 # Difference
-                labels = np.concatenate((transitions["obs_next"], transitions["ag_next"]), axis=-1) - np.concatenate((transitions["obs"], transitions["ag"]), axis=-1)
+                labels = np.concatenate((transitions["obs_next"], transitions["ag_next"], transitions["g"]), axis=-1) - np.concatenate((transitions["obs"], transitions["ag"], transitions["g"]), axis=-1)
 
                 # Train the environment model
                 env_model.train(inputs, labels, batch_size=256, holdout_ratio=0.2)
@@ -234,7 +234,7 @@ def main(args):
                     else:
                         o_ = np.concatenate((o, o_g), axis=-1)
                     a = agent.select_action(o_)
-                    o_2, o_2_ag = get_predicted_states_her(env_model, o, o_g, a, env_params)
+                    o_2, o_2_ag = get_predicted_states_her(env_model, o, o_ag, o_g, a, env_params)
                     # Push into memory
                     v_state[:, n], v_state_ag[:, n], v_state_g[:, n], v_action[:, n] = o, o_ag, o_g, a
                     o, o_ag = o_2, o_2_ag
