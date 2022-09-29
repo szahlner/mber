@@ -15,6 +15,7 @@ cp "./scripts/run_sac_halfcheetah.sh" "./run_sac_halfcheetah.sh"
 cp "./scripts/run_sac_halfcheetah_nmer.sh" "./run_sac_halfcheetah_nmer.sh"
 
 cp "./scripts/run_sac_hopper.sh" "./run_sac_hopper.sh"
+cp "./scripts/run_sac_hopper_per.sh" "./run_sac_hopper_per.sh"
 cp "./scripts/run_sac_hopper_nmer.sh" "./run_sac_hopper_nmer.sh"
 cp "./scripts/run_sac_hopper_slapp.sh" "./run_sac_hopper_slapp.sh"
 
@@ -54,6 +55,7 @@ chmod +x "./run_sac_halfcheetah.sh"
 chmod +x "./run_sac_halfcheetah_nmer.sh"
 
 chmod +x "./run_sac_hopper.sh"
+chmod +x "./run_sac_hopper_per.sh"
 chmod +x "./run_sac_hopper_nmer.sh"
 chmod +x "./run_sac_hopper_slapp.sh"
 
