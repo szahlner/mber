@@ -27,6 +27,7 @@ cp "./scripts/run_sac_inverted_pendulum_slapp.sh" "./run_sac_inverted_pendulum_s
 
 cp "./scripts/run_sac_walker2d.sh" "./run_sac_walker2d.sh"
 cp "./scripts/run_sac_walker2d_nmer.sh" "./run_sac_walker2d_nmer.sh"
+cp "./scripts/run_sac_walker2d_per.sh" "./run_sac_walker2d_per.sh"
 cp "./scripts/run_sac_walker2d_slapp.sh" "./run_sac_walker2d_slapp.sh"
 
 cp "./scripts/run_sac_fetchreach.sh" "./run_sac_fetchreach.sh"
@@ -67,6 +68,7 @@ chmod +x "./run_sac_inverted_pendulum_slapp.sh"
 
 chmod +x "./run_sac_walker2d.sh"
 chmod +x "./run_sac_walker2d_nmer.sh"
+chmod +x "./run_sac_walker2d_per.sh"
 chmod +x "./run_sac_walker2d_slapp.sh"
 
 chmod +x "./run_sac_fetchreach.sh"
