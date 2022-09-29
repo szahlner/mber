@@ -251,7 +251,7 @@ class HerMbpoReplayMemory(HerReplayMemory):
         v_env_params["max_timesteps"] = self.rollout_length
 
         self.v_buffer = HerReplayMemory(v_env_params, buffer_size, sample_func=sample_func, normalize=False)
-        self.r_buffer = SimpleReplayMemory(env_params, buffer_size, args=args, normalize=normalize)
+        self.r_buffer = SimpleReplayMemory(env_params, buffer_size, args=args, normalize=False)
 
         self.env = gym.make(args.env_name)
 
@@ -300,7 +300,7 @@ class HerMbpoReplayMemory(HerReplayMemory):
             for key in self.v_buffer.buffers.keys():
                 temp_buffers[key] = self.v_buffer.buffers[key][:self.v_buffer.current_size]
 
-        v_env_params = self.env_params
+        v_env_params = copy.copy(self.env_params)
         v_env_params["max_timesteps"] = self.rollout_length
         self.v_buffer = HerReplayMemory(v_env_params, v_capacity,
                                         sample_func=self.v_buffer.sample_func, normalize=self.v_buffer.normalize)
