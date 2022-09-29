@@ -200,7 +200,7 @@ def main(args):
                 batch_size = max(len(memory), 10000)
                 transitions = memory.sample_r(batch_size=batch_size, return_transitions=True)
 
-                inputs = np.concatenate((transitions["obs"], transitions["ag"], transitions["actions"]), axis=-1)
+                inputs = np.concatenate((transitions["obs"], transitions["g"], transitions["actions"]), axis=-1)
                 # Difference
                 labels = np.concatenate((transitions["obs_next"], transitions["ag_next"]), axis=-1) - np.concatenate((transitions["obs"], transitions["ag"]), axis=-1)
 
@@ -234,7 +234,7 @@ def main(args):
                     else:
                         o_ = np.concatenate((o, o_g), axis=-1)
                     a = agent.select_action(o_)
-                    o_2, o_2_ag = get_predicted_states_her(env_model, o, o_ag, a, env_params)
+                    o_2, o_2_ag = get_predicted_states_her(env_model, o, o_g, a, env_params)
                     # Push into memory
                     v_state[:, n], v_state_ag[:, n], v_state_g[:, n], v_action[:, n] = o, o_ag, o_g, a
                     o, o_ag = o_2, o_2_ag
