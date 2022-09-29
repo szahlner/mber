@@ -80,19 +80,20 @@ def main(args):
 
     # Tensorboard
     writer = SummaryWriter(
-        "runs/{}_SAC_{}_{}_{}{}{}{}{}_vr{}_ur{}_nub{}{}".format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
-                                                          args.env_name,
-                                                          args.policy,
-                                                          args.seed,
-                                                          "_autotune" if args.automatic_entropy_tuning else "",
-                                                          "_mb" if args.model_based else "",
-                                                          "_nmer" if args.nmer else "",
-                                                          "_her" if args.her else "",
-                                                          args.v_ratio,
-                                                          args.updates_per_step,
-                                                          args.n_update_batches,
-                                                          "_deterministic" if args.deterministic_model else "",
-                                                          )
+        "runs/{}_SAC_{}_{}_{}{}{}{}{}{}_vr{}_ur{}_nub{}{}".format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
+                                                                  args.env_name,
+                                                                  args.policy,
+                                                                  args.seed,
+                                                                  "_autotune" if args.automatic_entropy_tuning else "",
+                                                                  "_mb" if args.model_based else "",
+                                                                  "_nmer" if args.nmer else "",
+                                                                  "_her" if args.her else "",
+                                                                  "_slapp" if args.slapp else "",
+                                                                  args.v_ratio,
+                                                                  args.updates_per_step,
+                                                                  args.n_update_batches,
+                                                                  "_deterministic" if args.deterministic_model else "",
+                                                                  )
         )
 
     # Save args/config to file
