@@ -9,6 +9,7 @@ cp "./scripts/run_sac.sh" "./run_sac.sh"
 cp "./scripts/run_ddpg.sh" "./run_ddpg.sh"
 
 cp "./scripts/run_sac_ant.sh" "./run_sac_ant.sh"
+cp "./scripts/run_sac_ant_per.sh" "./run_sac_ant_per.sh"
 cp "./scripts/run_sac_ant_nmer.sh" "./run_sac_ant_nmer.sh"
 
 cp "./scripts/run_sac_halfcheetah.sh" "./run_sac_halfcheetah.sh"
@@ -50,6 +51,7 @@ chmod +x "./run_sac.sh"
 # chmod +x "./run_ddpg.sh"
 
 chmod +x "./run_sac_ant.sh"
+chmod +x "./run_sac_ant_per.sh"
 chmod +x "./run_sac_ant_nmer.sh"
 
 chmod +x "./run_sac_halfcheetah.sh"
