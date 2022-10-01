@@ -479,10 +479,11 @@ class HerNmerReplayMemory(SimpleReplayMemory):
     def update_neighbours(self):
         # Get whole buffer
         state = self.buffers["obs"][:self.current_size]
+        goal = self.buffers["g"][:self.current_size]
         action = self.buffers["actions"][:self.current_size]
 
         # Construct Z-space
-        z_space = np.concatenate((state, action), axis=-1)
+        z_space = np.concatenate((state, goal, action), axis=-1)
         z_space_norm = StandardScaler(with_mean=False).fit_transform(z_space)
 
         # NearestNeighbors - object
