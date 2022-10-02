@@ -527,6 +527,7 @@ class HerNmerReplayMemory(SimpleReplayMemory):
         delta_ag = delta_ag * mixing_param + nn_delta_ag * (1 - mixing_param)
         next_ag = ag + delta_ag
         g = g * mixing_param + nn_g * (1 - mixing_param)
+        ag = ag * mixing_param + nn_ag * (1 - mixing_param)
 
         # Include HER style
         current_episode = nn_indices // self.T
@@ -542,7 +543,7 @@ class HerNmerReplayMemory(SimpleReplayMemory):
         future_t = current_episode * self.T + future_tmp
 
         # Replace goal
-        g[use_her] = self.buffers["ag"][future_t][use_her]
+        g[use_her] = ag[use_her]
 
         reward = self.env.compute_reward(next_ag, g, None)
         mask = np.ones_like(reward)
