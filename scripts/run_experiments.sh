@@ -13,6 +13,7 @@ cp "./scripts/run_sac_ant_per.sh" "./run_sac_ant_per.sh"
 cp "./scripts/run_sac_ant_nmer.sh" "./run_sac_ant_nmer.sh"
 
 cp "./scripts/run_sac_halfcheetah.sh" "./run_sac_halfcheetah.sh"
+cp "./scripts/run_sac_halfcheetah_per.sh" "./run_sac_halfcheetah_per.sh"
 cp "./scripts/run_sac_halfcheetah_nmer.sh" "./run_sac_halfcheetah_nmer.sh"
 
 cp "./scripts/run_sac_hopper.sh" "./run_sac_hopper.sh"
@@ -55,6 +56,7 @@ chmod +x "./run_sac_ant_per.sh"
 chmod +x "./run_sac_ant_nmer.sh"
 
 chmod +x "./run_sac_halfcheetah.sh"
+chmod +x "./run_sac_halfcheetah_per.sh"
 chmod +x "./run_sac_halfcheetah_nmer.sh"
 
 chmod +x "./run_sac_hopper.sh"
