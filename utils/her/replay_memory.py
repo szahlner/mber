@@ -526,7 +526,7 @@ class HerNmerReplayMemory(SimpleReplayMemory):
         next_state = state + delta_state
         delta_ag = delta_ag * mixing_param + nn_delta_ag * (1 - mixing_param)
         next_ag = ag + delta_ag
-        # g = g * mixing_param + nn_g * (1 - mixing_param)
+        g = g * mixing_param + nn_g * (1 - mixing_param)
 
         # Include HER style
         current_episode = nn_indices // self.T
