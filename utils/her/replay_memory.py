@@ -528,6 +528,22 @@ class HerNmerReplayMemory(SimpleReplayMemory):
         next_ag = ag + delta_ag
         g = g * mixing_param + nn_g * (1 - mixing_param)
 
+        # Include HER style
+        current_episode = nn_indices // self.T
+        current_episode_timestep = nn_indices % self.T
+        current_episode_steps_left = self.T - current_episode_timestep - 1
+
+        future_probability = 1 - 1 / (1 + self.args.her_replay_k)
+        use_her = np.random.uniform(size=(len(nn_indices),)) < future_probability
+
+        future_offset = np.random.uniform(size=batch_size) * current_episode_steps_left
+        future_offset = future_offset.astype(int)
+        future_tmp = future_offset + current_episode_timestep
+        future_t = current_episode * self.T + future_tmp
+
+        # Replace goal
+        g[use_her] = self.buffers["ag"][future_t][use_her]
+
         reward = self.env.compute_reward(next_ag, g, None)
         mask = np.ones_like(reward)
 
