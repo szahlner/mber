@@ -530,20 +530,31 @@ class HerNmerReplayMemory(SimpleReplayMemory):
         g = g * mixing_param + nn_g * (1 - mixing_param)
 
         # Include HER style
-        current_episode = nn_indices // self.T
-        current_episode_timestep = nn_indices % self.T
+        current_episode = sample_indices // self.T
+        current_episode_timestep = sample_indices % self.T
         current_episode_steps_left = self.T - current_episode_timestep - 1
 
         future_probability = 1 - 1 / (1 + self.args.her_replay_k)
-        use_her = np.random.uniform(size=(len(nn_indices),)) < future_probability
+        use_her = np.random.uniform(size=(len(sample_indices),)) < future_probability
 
         future_offset = np.random.uniform(size=batch_size) * current_episode_steps_left
         future_offset = future_offset.astype(int)
         future_tmp = future_offset + current_episode_timestep
         future_t = current_episode * self.T + future_tmp
 
+        nn_current_episode = nn_indices // self.T
+        nn_current_episode_timestep = nn_indices % self.T
+        nn_current_episode_steps_left = self.T - nn_current_episode_timestep - 1
+
+        nn_future_offset = np.random.uniform(size=batch_size) * nn_current_episode_steps_left
+        nn_future_offset = nn_future_offset.astype(int)
+        nn_future_tmp = nn_future_offset + nn_current_episode_timestep
+        nn_future_t = nn_current_episode * self.T + nn_future_tmp
+
+        her_ag = self.buffers["ag"][future_t][use_her] * mixing_param[use_her] + self.buffers["ag"][nn_future_t][use_her] * (1 - mixing_param)[use_her]
+
         # Replace goal
-        g[use_her] = ag[use_her]
+        g[use_her] = her_ag
 
         reward = self.env.compute_reward(next_ag, g, None)
         mask = np.ones_like(reward)
