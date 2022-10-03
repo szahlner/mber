@@ -609,14 +609,14 @@ class HerSlappReplayMemory(SimpleReplayMemory):
             pickle.dump(data, f)
 
     def update_clusters(self, o, ag, a, o_2, ag_2, g):
-        z_space = np.concatenate((o, a), axis=-1)
+        z_space = np.concatenate((o, g, a), axis=-1)
         self.scaler.partial_fit(z_space)
         z_space_norm = self.scaler.transform(z_space)
         self.kmeans = self.kmeans.partial_fit(z_space_norm)
 
         # max startup steps, else max max_timesteps
         labels = self.kmeans.labels_
-        z_space = np.concatenate((z_space, ag, o_2, ag_2, g), axis=-1)
+        z_space = np.concatenate((z_space, ag, o_2, ag_2), axis=-1)
         for n in range(len(labels)):
             self.clusters[labels[n]] = self.clusters[labels[n]].partial_fit(z_space[n].reshape(1, -1))
 
@@ -629,7 +629,7 @@ class HerSlappReplayMemory(SimpleReplayMemory):
         next_state, next_ag = self.buffers["obs_next"][sample_indices], self.buffers["ag_next"][sample_indices]
         action, g = self.buffers["actions"][sample_indices], self.buffers["g"][sample_indices]
 
-        z_space = np.concatenate((state, action), axis=-1)
+        z_space = np.concatenate((state, g, action), axis=-1)
         z_space_norm = self.scaler.transform(z_space)
         cluster_labels = self.kmeans.predict(z_space_norm)
 
@@ -644,11 +644,20 @@ class HerSlappReplayMemory(SimpleReplayMemory):
         for n in range(batch_size):
             mu, std = self.clusters[cluster_labels[n]].mean_, self.clusters[cluster_labels[n]].scale_ * 0.01
             v_state[n] = mu[:obs_dim] + np.random.normal(size=mu[:obs_dim].shape) * std[:obs_dim]
-            v_action[n] = mu[obs_dim:obs_dim + action_dim] + np.random.normal(size=mu[obs_dim:obs_dim + action_dim].shape) * std[obs_dim:obs_dim + action_dim]
-            v_ag[n] = mu[obs_dim + action_dim:obs_dim + action_dim + g_dim] + np.random.normal(size=mu[obs_dim + action_dim:obs_dim + action_dim + g_dim].shape) * std[obs_dim + action_dim:obs_dim + action_dim + g_dim]
-            v_next_state[n] = mu[obs_dim + action_dim + g_dim:2 * obs_dim + action_dim + g_dim] + np.random.normal(size=mu[obs_dim + action_dim + g_dim:2 * obs_dim + action_dim + g_dim].shape) * std[obs_dim + action_dim + g_dim:2 * obs_dim + action_dim + g_dim]
-            v_next_ag[n] = mu[2 * obs_dim + action_dim + g_dim:2 * obs_dim + action_dim + 2 * g_dim] + np.random.normal(size=mu[2 * obs_dim + action_dim + g_dim:2 * obs_dim + action_dim + 2 * g_dim].shape) * std[2 * obs_dim + action_dim + g_dim:2 * obs_dim + action_dim + 2 * g_dim]
-            v_g[n] = mu[-g_dim:] + np.random.normal(size=mu[-g_dim:].shape) * std[-g_dim:]
+
+            g_dim_start, g_dim_end = obs_dim, obs_dim + g_dim
+            v_g[n] = mu[g_dim_start:g_dim_end] + np.random.normal(size=mu[g_dim_start:g_dim_end].shape) * std[g_dim_start:g_dim_end]
+
+            action_dim_start, action_dim_end = obs_dim + g_dim, obs_dim + g_dim + action_dim
+            v_action[n] = mu[action_dim_start:action_dim_end] + np.random.normal(size=mu[action_dim_start:action_dim_end].shape) * std[action_dim_start:action_dim_end]
+
+            ag_dim_start, ag_dim_end = obs_dim + g_dim + action_dim, obs_dim + 2 * g_dim + action_dim
+            v_ag[n] = mu[ag_dim_start:ag_dim_end] + np.random.normal(size=mu[ag_dim_start:ag_dim_end].shape) * std[ag_dim_start:ag_dim_end]
+
+            obs_next_dim_start, obs_next_dim_end = obs_dim + 2 * g_dim + action_dim, 2 * obs_dim + 2 * g_dim + action_dim
+            v_next_state[n] = mu[obs_next_dim_start:obs_next_dim_end] + np.random.normal(size=mu[obs_next_dim_start:obs_next_dim_end].shape) * std[obs_next_dim_start:obs_next_dim_end]
+
+            v_next_ag[n] = mu[-g_dim:] + np.random.normal(size=mu[-g_dim:].shape) * std[-g_dim:]
         v_action = np.clip(v_action, self.min_action, self.max_action)
 
         delta_state = (next_state - state).copy()
@@ -662,9 +671,41 @@ class HerSlappReplayMemory(SimpleReplayMemory):
         action = action * mixing_param + v_action * (1 - mixing_param)
         delta_state = delta_state * mixing_param + v_delta_state * (1 - mixing_param)
         next_state = state + delta_state
+        ag = ag * mixing_param + v_ag * (1 - mixing_param)
         delta_ag = delta_ag * mixing_param + v_delta_ag * (1 - mixing_param)
         next_ag = ag + delta_ag
         g = g * mixing_param + v_g * (1 - mixing_param)
+
+        # Include HER style
+        current_episode = sample_indices // self.T
+        current_episode_timestep = sample_indices % self.T
+        current_episode_steps_left = self.T - current_episode_timestep - 1
+
+        future_probability = 1 - 1 / (1 + self.args.her_replay_k)
+        use_her = np.random.uniform(size=(len(sample_indices),)) < future_probability
+
+        future_offset = np.random.uniform(size=batch_size) * current_episode_steps_left
+        future_offset = future_offset.astype(int)
+        future_tmp = future_offset + current_episode_timestep
+        future_t = current_episode * self.T + future_tmp
+
+        future_state, future_ag = self.buffers["obs"][future_t], self.buffers["ag"][future_t]
+        future_action, future_g = self.buffers["actions"][future_t], self.buffers["g"][future_t]
+
+        future_z_space = np.concatenate((future_state, future_g, future_action), axis=-1)
+        future_z_space_norm = self.scaler.transform(future_z_space)
+        future_cluster_labels = self.kmeans.predict(future_z_space_norm)
+
+        v_future_ag = np.empty(shape=(batch_size, g_dim))
+        for n in range(batch_size):
+            mu, std = self.clusters[future_cluster_labels[n]].mean_, self.clusters[future_cluster_labels[n]].scale_ * 0.01
+            ag_dim_start, ag_dim_end = obs_dim + g_dim + action_dim, obs_dim + 2 * g_dim + action_dim
+            v_future_ag[n] = mu[ag_dim_start:ag_dim_end] + np.random.normal(size=mu[ag_dim_start:ag_dim_end].shape) * std[ag_dim_start:ag_dim_end]
+
+        her_ag = future_ag[use_her] * mixing_param[use_her] + v_future_ag[use_her] * (1 - mixing_param)[use_her]
+
+        # Replace goal
+        g[use_her] = her_ag
 
         reward = self.env.compute_reward(next_ag, g, None)
         mask = np.ones_like(reward)
