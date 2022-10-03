@@ -1,6 +1,6 @@
 #!/bin/bash
 
-env_name=ShadowHandReach-v1
+env_name=ShadowHandReachHard-v1
 alpha=0.01
 num_steps=50000
 start_steps=500
