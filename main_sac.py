@@ -169,7 +169,12 @@ def main(args):
             memory = SimpleLocalApproximationReplayMemory(args.replay_size, args.seed,
                                                           state_dim=state_size, action_space=env.action_space,
                                                           env_name=args.env_name, args=args)
-
+        elif args.lcrmer:
+            from utils.replay_memory import LocalClusterRandomMemberExperienceReplay
+            state_size = np.prod(env.observation_space.shape)
+            memory = LocalClusterRandomMemberExperienceReplay(args.replay_size, args.seed,
+                                                              state_dim=state_size, action_space=env.action_space,
+                                                              env_name=args.env_name, args=args)
         else:
             from utils.replay_memory import ReplayMemory
             memory = ReplayMemory(args.replay_size, args.seed)
@@ -205,7 +210,7 @@ def main(args):
             state, action, reward, next_state, mask = episode_trajectory[t]
             memory.push(state, action, reward, next_state, mask)  # Append transition to memory
 
-    if args.slapp:
+    if args.slapp or args.lcrmer:
         o = memory.buffer["state"][:len(memory)]
         a = memory.buffer["action"][:len(memory)]
         r = memory.buffer["reward"][:len(memory)]
@@ -314,7 +319,7 @@ def main(args):
 
                 writer.add_scalar('avg_reward/test_timesteps', avg_reward_eval, total_numsteps)
 
-                if args.slapp:
+                if args.slapp or args.lcrmer:
                     memory.save_cluster_centers(total_numsteps, writer.log_dir)
 
                 print("----------------------------------------")
@@ -328,7 +333,7 @@ def main(args):
             state, action, reward, next_state, mask = episode_trajectory[t]
             memory.push(state, action, reward, next_state, mask)  # Append transition to memory
 
-        if args.slapp:
+        if args.slapp or args.lcrmer:
             o = memory.buffer["state"][total_numsteps - steps_taken:total_numsteps]
             a = memory.buffer["action"][total_numsteps - steps_taken:total_numsteps]
             r = memory.buffer["reward"][total_numsteps - steps_taken:total_numsteps]
@@ -424,7 +429,12 @@ if __name__ == "__main__":
                         help='use PER (default: False)')
     parser.add_argument('--slapp', action="store_true",
                         help='use SLAPP (default: False)')
+    parser.add_argument('--lcrmer', action="store_true",
+                        help='use LCRMER (default: False)')
 
     args = parser.parse_args()
+
+    assert args.slapp and not args.lcrmer or not args.slapp and args.lcrmer or \
+           not args.slapp and not args.lcrmer, "SLAPP and LCRMER must not be both active at the same time"
 
     main(args)

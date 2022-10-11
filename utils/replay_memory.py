@@ -2,7 +2,7 @@ import os
 import pickle
 import random
 import numpy as np
-import gym
+
 from utils.utils import termination_fn
 from utils.segment_tree import MinSegmentTree, SumSegmentTree
 from sklearn.neighbors import NearestNeighbors
@@ -726,6 +726,107 @@ class SimpleLocalApproximationReplayMemory(BaseReplayMemory):
             v_reward[n] = mu[self.state_dim + self.action_dim:self.state_dim + self.action_dim + 1] + np.random.normal(size=mu[self.state_dim + self.action_dim:self.state_dim + self.action_dim + 1].shape) * std[self.state_dim + self.action_dim:self.state_dim + self.action_dim + 1]
             v_next_state[n] = mu[-self.state_dim:] + np.random.normal(size=mu[-self.state_dim:].shape) * std[-self.state_dim:]
         v_action = np.clip(v_action, self.min_action, self.max_action)
+
+        delta_state = (next_state - state).copy()
+        v_delta_state = (v_next_state - v_state).copy()
+
+        # Linearly interpolate sample and neighbor points
+        mixing_param = np.random.uniform(size=(len(state), 1))
+        state = state * mixing_param + v_state * (1 - mixing_param)
+        action = action * mixing_param + v_action * (1 - mixing_param)
+        reward = (reward * mixing_param + v_reward * (1 - mixing_param)).squeeze()
+        delta_state = delta_state * mixing_param + v_delta_state * (1 - mixing_param)
+        next_state = state + delta_state
+
+        done = termination_fn(self.env_name, state, action, next_state)
+        mask = np.invert(done).astype(float).squeeze()
+
+        return state, action, reward, next_state, mask
+
+
+class LocalClusterRandomMemberExperienceReplay(BaseReplayMemory):
+    def __init__(self, capacity, seed, state_dim, action_space, env_name="Hopper-v2", args=None, debug=False):
+        super().__init__(capacity, seed, state_dim=state_dim, action_dim=np.prod(action_space.shape))
+
+        assert args is not None, "args must not be None"
+
+        self.n_clusters = args.epoch_length
+        self.scaler = StandardScaler()
+        self.kmeans = MiniBatchKMeans(n_clusters=self.n_clusters, random_state=seed, batch_size=2048, reassignment_ratio=0)
+        self.clusters = np.ones(shape=(capacity, 1), dtype=int) * -1
+        self.clusters_current_position = 0
+        self.clusters_size = 0
+
+        self.max_action = action_space.high
+        self.min_action = action_space.low
+
+        self.env_name = env_name
+        self.args = args
+        self.seed = seed
+
+        self.debug = debug
+        self.cluster_centers_kmeans = []
+        self.cluster_centers = []
+        self.timesteps = []
+
+    def save_cluster_centers(self, timesteps, save_path):
+        if not self.debug:
+            return
+
+        self.cluster_centers_kmeans.append(self.kmeans.cluster_centers_.copy())
+        cc = np.empty(shape=(self.n_clusters, 2 * self.state_dim + 1 + self.action_dim))
+        for n in range(self.n_clusters):
+            cc[n] = self.clusters[n].mean_.copy()
+        self.cluster_centers.append(cc)
+        self.timesteps.append(timesteps)
+
+        data = {
+            "cluster_centers_kmeans": np.array(self.cluster_centers_kmeans),
+            "cluster_centers": np.array(self.cluster_centers),
+            "timesteps": np.array(self.timesteps),
+        }
+
+        save_path = os.path.join(save_path, "cluster_centers.pkl")
+        with open(save_path, 'wb') as f:
+            pickle.dump(data, f)
+
+    def update_clusters(self, o, a, r, o_2):
+        z_space = np.concatenate((o, a), axis=-1)
+        self.scaler.partial_fit(z_space)
+        z_space_norm = self.scaler.transform(z_space)
+        self.kmeans = self.kmeans.partial_fit(z_space_norm)
+
+        labels = self.kmeans.labels_
+        for n in range(len(labels)):
+            self.clusters[self.clusters_current_position] = labels[n]
+            self.clusters_current_position += 1
+            if self.clusters_current_position % self.capacity == 0:
+                self.clusters_current_position = 0
+            self.clusters_size = min(self.clusters_size + 1, self.capacity)
+
+    def sample_r(self, batch_size):
+        return super().sample(batch_size=batch_size)
+
+    def sample(self, batch_size):
+        state, action, reward, next_state, done = self.sample_r(batch_size=batch_size)
+
+        z_space = np.concatenate((state, action), axis=-1)
+        z_space_norm = self.scaler.transform(z_space)
+        cluster_labels = self.kmeans.predict(z_space_norm)
+
+        v_state = np.empty(shape=(batch_size, self.state_dim))
+        v_action = np.empty(shape=(batch_size, self.action_dim))
+        v_reward = np.empty(shape=(batch_size, 1))
+        v_next_state = np.empty(shape=(batch_size, self.state_dim))
+        for n in range(batch_size):
+            cluster_members = np.where(self.clusters[:self.clusters_size] == cluster_labels[n])[0]
+            random_idx = np.random.choice(cluster_members, 2)
+
+            state[n], v_state[n] = self.buffer["state"][random_idx[0]], self.buffer["state"][random_idx[1]]
+            action[n], v_action[n] = self.buffer["action"][random_idx[0]], self.buffer["action"][random_idx[1]]
+            reward[n], v_reward[n] = self.buffer["reward"][random_idx[0]], self.buffer["reward"][random_idx[1]]
+            next_state[n] = self.buffer["next_state"][random_idx[0]]
+            v_next_state[n] = self.buffer["next_state"][random_idx[1]]
 
         delta_state = (next_state - state).copy()
         v_delta_state = (v_next_state - v_state).copy()
