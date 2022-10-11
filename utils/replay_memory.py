@@ -753,9 +753,9 @@ class LocalClusterRandomMemberExperienceReplay(BaseReplayMemory):
         self.n_clusters = args.epoch_length
         self.scaler = StandardScaler()
         self.kmeans = MiniBatchKMeans(n_clusters=self.n_clusters, random_state=seed, batch_size=2048, reassignment_ratio=0)
-        self.clusters = np.ones(shape=(capacity, 1), dtype=int) * -1
+        self.clusters = [[] for _ in range(self.n_clusters)]
         self.clusters_current_position = 0
-        self.clusters_size = 0
+        self.reached_capacity = False
 
         self.max_action = action_space.high
         self.min_action = action_space.low
@@ -798,11 +798,17 @@ class LocalClusterRandomMemberExperienceReplay(BaseReplayMemory):
 
         labels = self.kmeans.labels_
         for n in range(len(labels)):
-            self.clusters[self.clusters_current_position] = labels[n]
+            if self.reached_capacity:
+                for k in range(len(self.clusters)):
+                    if self.clusters_current_position in self.clusters[k]:
+                        self.clusters[k].remove(self.clusters_current_position)
+
+            self.clusters[labels[n]].append(self.clusters_current_position)
             self.clusters_current_position += 1
+
             if self.clusters_current_position % self.capacity == 0:
                 self.clusters_current_position = 0
-            self.clusters_size = min(self.clusters_size + 1, self.capacity)
+                self.reached_capacity = True
 
     def sample_r(self, batch_size):
         return super().sample(batch_size=batch_size)
@@ -819,8 +825,9 @@ class LocalClusterRandomMemberExperienceReplay(BaseReplayMemory):
         v_reward = np.empty(shape=(batch_size, 1))
         v_next_state = np.empty(shape=(batch_size, self.state_dim))
         for n in range(batch_size):
-            cluster_members = np.where(self.clusters[:self.clusters_size] == cluster_labels[n])[0]
-            random_idx = np.random.choice(cluster_members, 2)
+            # cluster_members = np.where(self.clusters[:self.clusters_size] == cluster_labels[n])[0]
+            # random_idx = np.random.choice(cluster_members, 2)
+            random_idx = np.random.choice(self.clusters[cluster_labels[n]], 2)
 
             state[n], v_state[n] = self.buffer["state"][random_idx[0]], self.buffer["state"][random_idx[1]]
             action[n], v_action[n] = self.buffer["action"][random_idx[0]], self.buffer["action"][random_idx[1]]
