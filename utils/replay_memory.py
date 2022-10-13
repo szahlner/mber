@@ -649,7 +649,7 @@ class PerNmerReplayMemory(PerReplayMemory):
         return state, action, reward, next_state, mask, weights[:, None], sample_indices
 
 
-class SimpleLocalApproximationReplayMemory(BaseReplayMemory):
+class LocalClusterExperienceReplayClusterCenter(BaseReplayMemory):
     def __init__(self, capacity, seed, state_dim, action_space, env_name="Hopper-v2", args=None, debug=False):
         super().__init__(capacity, seed, state_dim=state_dim, action_dim=np.prod(action_space.shape))
 
@@ -744,7 +744,7 @@ class SimpleLocalApproximationReplayMemory(BaseReplayMemory):
         return state, action, reward, next_state, mask
 
 
-class LocalClusterRandomMemberExperienceReplay(BaseReplayMemory):
+class LocalClusterExperienceReplayRandomMember(BaseReplayMemory):
     def __init__(self, capacity, seed, state_dim, action_space, env_name="Hopper-v2", args=None, debug=False):
         super().__init__(capacity, seed, state_dim=state_dim, action_dim=np.prod(action_space.shape))
 

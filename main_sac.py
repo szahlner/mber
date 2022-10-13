@@ -119,16 +119,17 @@ def main(args):
 
     # Tensorboard
     writer = SummaryWriter(
-        "runs/{}_SAC_{}_{}_{}{}{}{}{}{}_vr{}_ur{}{}".format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
-                                                            args.env_name, args.policy, args.seed,
-                                                            "_autotune" if args.automatic_entropy_tuning else "",
-                                                            "_mb" if args.model_based else "",
-                                                            "_nmer" if args.nmer else "",
-                                                            "_per" if args.per else "",
-                                                            "_slapp" if args.slapp else "",
-                                                            args.v_ratio, args.updates_per_step,
-                                                            "_deterministic" if args.deterministic_model else "",
-                                                            )
+        "runs/{}_SAC_{}_{}_{}{}{}{}{}{}{}_vr{}_ur{}{}".format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
+                                                              args.env_name, args.policy, args.seed,
+                                                              "_autotune" if args.automatic_entropy_tuning else "",
+                                                              "_mb" if args.model_based else "",
+                                                              "_nmer" if args.nmer else "",
+                                                              "_per" if args.per else "",
+                                                              "_lcercc" if args.lcercc else "",
+                                                              "_lcerrm" if args.lcerrm else "",
+                                                              args.v_ratio, args.updates_per_step,
+                                                              "_deterministic" if args.deterministic_model else "",
+                                                              )
         )
 
     # Save args/config to file
@@ -163,16 +164,16 @@ def main(args):
             state_size = np.prod(env.observation_space.shape)
             action_size = np.prod(env.action_space.shape)
             memory = PerReplayMemory(args.replay_size, args.seed, state_dim=state_size, action_dim=action_size)
-        elif args.slapp:
-            from utils.replay_memory import SimpleLocalApproximationReplayMemory
+        elif args.lcercc:
+            from utils.replay_memory import LocalClusterExperienceReplayClusterCenter
             state_size = np.prod(env.observation_space.shape)
-            memory = SimpleLocalApproximationReplayMemory(args.replay_size, args.seed,
-                                                          state_dim=state_size, action_space=env.action_space,
-                                                          env_name=args.env_name, args=args)
-        elif args.lcrmer:
-            from utils.replay_memory import LocalClusterRandomMemberExperienceReplay
+            memory = LocalClusterExperienceReplayClusterCenter(args.replay_size, args.seed,
+                                                               state_dim=state_size, action_space=env.action_space,
+                                                               env_name=args.env_name, args=args)
+        elif args.lcerrm:
+            from utils.replay_memory import LocalClusterExperienceReplayRandomMember
             state_size = np.prod(env.observation_space.shape)
-            memory = LocalClusterRandomMemberExperienceReplay(args.replay_size, args.seed,
+            memory = LocalClusterExperienceReplayRandomMember(args.replay_size, args.seed,
                                                               state_dim=state_size, action_space=env.action_space,
                                                               env_name=args.env_name, args=args)
         else:
@@ -210,7 +211,7 @@ def main(args):
             state, action, reward, next_state, mask = episode_trajectory[t]
             memory.push(state, action, reward, next_state, mask)  # Append transition to memory
 
-    if args.slapp or args.lcrmer:
+    if args.lcercc or args.lcerrm:
         o = memory.buffer["state"][:len(memory)]
         a = memory.buffer["action"][:len(memory)]
         r = memory.buffer["reward"][:len(memory)]
@@ -319,7 +320,7 @@ def main(args):
 
                 writer.add_scalar('avg_reward/test_timesteps', avg_reward_eval, total_numsteps)
 
-                if args.slapp or args.lcrmer:
+                if args.lcercc or args.lcerrm:
                     memory.save_cluster_centers(total_numsteps, writer.log_dir)
 
                 print("----------------------------------------")
@@ -333,7 +334,7 @@ def main(args):
             state, action, reward, next_state, mask = episode_trajectory[t]
             memory.push(state, action, reward, next_state, mask)  # Append transition to memory
 
-        if args.slapp or args.lcrmer:
+        if args.lcercc or args.lcerrm:
             o = memory.buffer["state"][total_numsteps - steps_taken:total_numsteps]
             a = memory.buffer["action"][total_numsteps - steps_taken:total_numsteps]
             r = memory.buffer["reward"][total_numsteps - steps_taken:total_numsteps]
@@ -427,14 +428,14 @@ if __name__ == "__main__":
                         help='amount of neighbours to use (default: 10)')
     parser.add_argument('--per', action="store_true",
                         help='use PER (default: False)')
-    parser.add_argument('--slapp', action="store_true",
-                        help='use SLAPP (default: False)')
-    parser.add_argument('--lcrmer', action="store_true",
-                        help='use LCRMER (default: False)')
+    parser.add_argument('--lcercc', action="store_true",
+                        help='use LCERCC (default: False)')
+    parser.add_argument('--lcerrm', action="store_true",
+                        help='use LCERRM (default: False)')
 
     args = parser.parse_args()
 
-    assert args.slapp and not args.lcrmer or not args.slapp and args.lcrmer or \
-           not args.slapp and not args.lcrmer, "SLAPP and LCRMER must not be both active at the same time"
+    assert args.lcercc and not args.lcerrm or not args.lcercc and args.lcerrm or \
+           not args.lcercc and not args.lcerrm, "LCERCC and LCERRM must not be both active at the same time"
 
     main(args)
