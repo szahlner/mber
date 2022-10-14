@@ -206,6 +206,7 @@ class TensorMinibatchKMeans:
         self._cluster_centers_sum_sq = torch.zeros_like(self._cluster_centers, dtype=torch.float, device=self._device)
         self._cluster_centers_count = torch.zeros_like(self._cluster_centers, dtype=torch.float, device=self._device)
 
+        X = torch.tensor(X, dtype=torch.float, device=self._device)
         for n in range(len(self._labels)):
             ones = torch.ones(size=(self._dimensions,), dtype=torch.int, device=self._device)
             self._cluster_centers_count[self._labels[n]] += ones
