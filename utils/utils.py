@@ -332,6 +332,8 @@ class TensorMinibatchKMeans:
         return self._labels.detach().cpu().numpy().astype(int)
 
     def fit(self, X):
+        if isinstance(X, torch.Tensor):
+            X = X.detach().cpu().numpy()
         self._kmeans = self._kmeans.fit(X)
 
         self._labels = torch.tensor(self._kmeans.labels_, dtype=torch.int, device=self._device)
