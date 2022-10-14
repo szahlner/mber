@@ -165,8 +165,7 @@ def main(args):
             action_size = np.prod(env.action_space.shape)
             memory = PerReplayMemory(args.replay_size, args.seed, state_dim=state_size, action_dim=action_size)
         elif args.lcercc:
-            from utils.replay_memory import LocalClusterExperienceReplayClusterCenterTensor as LocalClusterExperienceReplayClusterCenter
-            # from utils.replay_memory import LocalClusterExperienceReplayClusterCenter
+            from utils.replay_memory import LocalClusterExperienceReplayClusterCenter
             state_size = np.prod(env.observation_space.shape)
             memory = LocalClusterExperienceReplayClusterCenter(args.replay_size, args.seed,
                                                                state_dim=state_size, action_space=env.action_space,
