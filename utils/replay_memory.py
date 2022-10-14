@@ -971,11 +971,6 @@ class LocalClusterExperienceReplayClusterCenterTensor(BaseReplayMemoryTensor):
         pass
 
     def update_clusters(self, o, a, r, o_2):
-        o = torch.tensor(o, dtype=torch.float, device=self.device)
-        a = torch.tensor(a, dtype=torch.float, device=self.device)
-        r = torch.tensor(r, dtype=torch.float, device=self.device)
-        o_2 = torch.tensor(o_2, dtype=torch.float, device=self.device)
-
         z_space = torch.cat((o, a), dim=-1)
         self.scaler.partial_fit(z_space)
         z_space_norm = self.scaler.transform(z_space)
@@ -1028,11 +1023,11 @@ class LocalClusterExperienceReplayClusterCenterTensor(BaseReplayMemoryTensor):
         mixing_param = torch.rand(size=(len(state), 1), device=self.device)
         state = state * mixing_param + v_state * (1 - mixing_param)
         action = action * mixing_param + v_action * (1 - mixing_param)
-        reward = (reward * mixing_param + v_reward * (1 - mixing_param)).squeeze()
+        reward = (reward * mixing_param + v_reward * (1 - mixing_param))
         delta_state = delta_state * mixing_param + v_delta_state * (1 - mixing_param)
         next_state = state + delta_state
 
         done = tensor_termination_fn(self.env_name, state, action, next_state)
-        mask = (~done).type(torch.float).squeeze()
+        mask = (~done).type(torch.float)
 
         return state, action, reward, next_state, mask
