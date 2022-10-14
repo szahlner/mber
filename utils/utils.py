@@ -2,6 +2,9 @@ import numpy as np
 import math
 import torch
 
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
+
 
 def create_log_gaussian(mean, log_std, t):
     quadratic = -((0.5 * (t - mean) / (log_std.exp())).pow(2))
@@ -155,3 +158,94 @@ def get_env_params(env):
     }
 
     return params
+
+
+class TensorMinibatchKMeans:
+    def __init__(self, eps=1e-2, **kwargs):
+        self._labels = None
+        self._cluster_centers = None
+        self._cluster_centers_std = None
+
+        self._dimensions = None
+        self._cluster_centers_sum = None
+        self._cluster_centers_count = None
+
+        self._kmeans = KMeans(**kwargs)
+
+        if torch.cuda.is_available():
+            self._device = torch.device("cuda")
+        else:
+            self._device = torch.device("cpu")
+
+        self._eps = torch.tensor(eps ** 2, dtype=torch.float, device=self._device)
+
+    @property
+    def n_clusters(self):
+        return self._kmeans.n_clusters
+
+    @property
+    def cluster_centers_(self):
+        return self._cluster_centers.detach().cpu().numpy()
+
+    @property
+    def cluster_centers_std_(self):
+        return self._cluster_centers_std.detach().cpu().numpy()
+
+    @property
+    def labels_(self):
+        return self._labels.detach().cpu().numpy().astype(int)
+
+    def fit(self, X):
+        self._kmeans = self._kmeans.fit(X)
+
+        self._labels = torch.tensor(self._kmeans.labels_, dtype=torch.int, device=self._device)
+        self._cluster_centers = torch.tensor(self._kmeans.cluster_centers_, dtype=torch.float, device=self._device)
+
+        self._dimensions = self._cluster_centers.shape[1]
+        self._cluster_centers_sum = torch.zeros_like(self._cluster_centers, dtype=torch.float, device=self._device)
+        self._cluster_centers_sum_sq = torch.zeros_like(self._cluster_centers, dtype=torch.float, device=self._device)
+        self._cluster_centers_count = torch.zeros_like(self._cluster_centers, dtype=torch.float, device=self._device)
+
+        for n in range(len(self._labels)):
+            ones = torch.ones(size=(self._dimensions,), dtype=torch.int, device=self._device)
+            self._cluster_centers_count[self._labels[n]] += ones
+            self._cluster_centers_sum[self._labels[n]] += X[n]
+            self._cluster_centers_sum_sq[self._labels[n]] += X[n] ** 2
+
+        squared_mean = self._cluster_centers_sum_sq / self._cluster_centers_count
+        max_or_eps = torch.max(self._eps, squared_mean - torch.square(self._cluster_centers))
+        self._cluster_centers_std = torch.pow(max_or_eps, 0.5)
+
+    def partial_fit(self, X):
+        if self._labels is None:
+            self.fit(X)
+            return self
+
+        # Assign to cluster centers
+        X = torch.tensor(X, dtype=torch.float, device=self._device)
+        dist = torch.cdist(X, self._cluster_centers, p=2)
+        _, idx = torch.min(dist, dim=-1)
+
+        # Update cluster centers
+        for n in range(len(idx)):
+            ones = torch.ones(size=(self._dimensions,), dtype=torch.int, device=self._device)
+            self._cluster_centers_count[idx[n]] += ones
+            self._cluster_centers_sum[idx[n]] += X[n]
+            self._cluster_centers_sum_sq[idx[n]] += X[n] ** 2
+
+        # Update properties
+        # self._labels = torch.cat((self._labels, idx), dim=-1)
+        self._labels = idx
+        self._cluster_centers = self._cluster_centers_sum / self._cluster_centers_count
+
+        squared_mean = self._cluster_centers_sum_sq / self._cluster_centers_count
+        max_or_eps = torch.max(self._eps, squared_mean - torch.square(self._cluster_centers))
+        self._cluster_centers_std = torch.pow(max_or_eps, 0.5)
+
+        return self
+
+    def predict(self, X):
+        X = torch.tensor(X, dtype=torch.float, device=self._device)
+        dist = torch.cdist(X, self._cluster_centers, p=2)
+        _, idx = torch.min(dist, dim=-1)
+        return idx

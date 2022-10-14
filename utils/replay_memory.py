@@ -672,6 +672,9 @@ class LocalClusterExperienceReplayClusterCenter(BaseReplayMemory):
         self.cluster_centers = []
         self.timesteps = []
 
+        from utils.utils import TensorMinibatchKMeans
+        self.kmeans = TensorMinibatchKMeans(n_clusters=self.n_clusters, random_state=seed)
+
     def save_cluster_centers(self, timesteps, save_path):
         if not self.debug:
             return
