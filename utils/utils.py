@@ -206,11 +206,12 @@ class TensorMinibatchKMeans:
         self._cluster_centers_sum_sq = torch.zeros_like(self._cluster_centers, dtype=torch.float, device=self._device)
         self._cluster_centers_count = torch.zeros_like(self._cluster_centers, dtype=torch.float, device=self._device)
 
-        for n in range(len(self._labels)):
+        labels_numpy = self._labels.detach().cpu().numpy()
+        for n in range(len(labels_numpy)):
             ones = torch.ones(size=(self._dimensions,), dtype=torch.int, device=self._device)
-            self._cluster_centers_count[self._labels[n]] += ones
-            self._cluster_centers_sum[self._labels[n]] += X[n]
-            self._cluster_centers_sum_sq[self._labels[n]] += X[n] ** 2
+            self._cluster_centers_count[labels_numpy[n]] += ones
+            self._cluster_centers_sum[labels_numpy[n]] += X[n]
+            self._cluster_centers_sum_sq[labels_numpy[n]] += X[n] ** 2
 
         squared_mean = self._cluster_centers_sum_sq / self._cluster_centers_count
         max_or_eps = torch.max(self._eps, squared_mean - torch.square(self._cluster_centers))
@@ -227,11 +228,12 @@ class TensorMinibatchKMeans:
         _, idx = torch.min(dist, dim=-1)
 
         # Update cluster centers
-        for n in range(len(idx)):
+        idx_numpy = idx.detach().cpu().numpy()
+        for n in range(len(idx_numpy)):
             ones = torch.ones(size=(self._dimensions,), dtype=torch.int, device=self._device)
-            self._cluster_centers_count[idx[n]] += ones
-            self._cluster_centers_sum[idx[n]] += X[n]
-            self._cluster_centers_sum_sq[idx[n]] += X[n] ** 2
+            self._cluster_centers_count[idx_numpy[n]] += ones
+            self._cluster_centers_sum[idx_numpy[n]] += X[n]
+            self._cluster_centers_sum_sq[idx_numpy[n]] += X[n] ** 2
 
         # Update properties
         # self._labels = torch.cat((self._labels, idx), dim=-1)
