@@ -693,7 +693,7 @@ class LocalClusterExperienceReplayClusterCenter(BaseReplayMemory):
         }
 
         save_path = os.path.join(save_path, "cluster_centers.pkl")
-        with open(save_path, 'wb') as f:
+        with open(save_path, "wb") as f:
             pickle.dump(data, f)
 
     def update_clusters(self, o, a, r, o_2):
@@ -772,6 +772,9 @@ class LocalClusterExperienceReplayRandomMember(BaseReplayMemory):
         self.cluster_centers = []
         self.timesteps = []
 
+        from utils.utils import TensorMinibatchKMeans
+        self.kmeans = TensorMinibatchKMeans(n_clusters=self.n_clusters, random_state=seed)
+
     def save_cluster_centers(self, timesteps, save_path):
         if not self.debug:
             return
@@ -790,7 +793,7 @@ class LocalClusterExperienceReplayRandomMember(BaseReplayMemory):
         }
 
         save_path = os.path.join(save_path, "cluster_centers.pkl")
-        with open(save_path, 'wb') as f:
+        with open(save_path, "wb") as f:
             pickle.dump(data, f)
 
     def update_clusters(self, o, a, r, o_2):
@@ -798,6 +801,16 @@ class LocalClusterExperienceReplayRandomMember(BaseReplayMemory):
         self.scaler.partial_fit(z_space)
         z_space_norm = self.scaler.transform(z_space)
         self.kmeans = self.kmeans.partial_fit(z_space_norm)
+
+        z_space = np.concatenate((self.buffer["state"][:len(self)], self.buffer["action"][:len(self)]), axis=-1)
+        z_space_norm = self.scaler.transform(z_space)
+        labels = self.kmeans.predict(z_space_norm)
+        labels = np.array(labels)
+        for n in range(self.n_clusters):
+            buffer_idx = np.argwhere(labels == n)
+            self.clusters[n] = buffer_idx.squeeze().tolist()
+
+        return
 
         labels = self.kmeans.labels_
         for n in range(len(labels)):
