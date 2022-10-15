@@ -249,9 +249,17 @@ class TensorMinibatchKMeans:
 
         return self
 
-    def predict(self, X):
+    def predict(self, X, batch_size=2048):
         if not isinstance(X, torch.Tensor):
             X = torch.tensor(X, dtype=torch.float, device=self._device)
-        dist = torch.cdist(X, self._cluster_centers, p=2)
-        _, idx = torch.min(dist, dim=-1)
+        size = len(X)
+        if size > batch_size:
+            idx = torch.empty(size=(size,), dtype=torch.int, device=self._device)
+            for start_pos in range(0, size, batch_size):
+                X_ = X[start_pos:start_pos + batch_size]
+                dist = torch.cdist(X_, self._cluster_centers, p=2)
+                _, idx[start_pos:start_pos + batch_size] = torch.min(dist, dim=-1)
+        else:
+            dist = torch.cdist(X, self._cluster_centers, p=2)
+            _, idx = torch.min(dist, dim=-1)
         return idx
