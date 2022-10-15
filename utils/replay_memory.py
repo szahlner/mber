@@ -805,7 +805,7 @@ class LocalClusterExperienceReplayRandomMember(BaseReplayMemory):
         z_space = np.concatenate((self.buffer["state"][:len(self)], self.buffer["action"][:len(self)]), axis=-1)
         z_space_norm = self.scaler.transform(z_space)
         labels = self.kmeans.predict(z_space_norm)
-        labels = np.array(labels)
+        labels = labels.detach().cpu().numpy()
         for n in range(self.n_clusters):
             buffer_idx = np.argwhere(labels == n)
             self.clusters[n] = buffer_idx.squeeze().tolist()
