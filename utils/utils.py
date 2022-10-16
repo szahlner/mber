@@ -249,7 +249,7 @@ class TensorMinibatchKMeans:
 
         return self
 
-    def predict(self, X, batch_size=2048):
+    def predict(self, X, batch_size=20000):
         if not isinstance(X, torch.Tensor):
             X = torch.tensor(X, dtype=torch.float, device=self._device)
         size = len(X)
