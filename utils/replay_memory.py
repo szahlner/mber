@@ -756,8 +756,8 @@ class LocalClusterExperienceReplayRandomMember(BaseReplayMemory):
         self.n_clusters = args.epoch_length
         self.scaler = StandardScaler()
         self.kmeans = MiniBatchKMeans(n_clusters=self.n_clusters, random_state=seed, batch_size=2048, reassignment_ratio=0)
-        # self.clusters = [[] for _ in range(self.n_clusters)]
-        self.clusters = [StandardScaler() for _ in range(self.n_clusters)]
+        self.clusters = [[] for _ in range(self.n_clusters)]
+        # self.clusters = [StandardScaler() for _ in range(self.n_clusters)]
         self.clusters_current_position = 0
         self.reached_capacity = False
 
@@ -803,14 +803,6 @@ class LocalClusterExperienceReplayRandomMember(BaseReplayMemory):
         z_space_norm = self.scaler.transform(z_space)
         self.kmeans = self.kmeans.partial_fit(z_space_norm)
 
-        # max startup steps, else max max_timesteps
-        labels = self.kmeans.labels_
-        z_space = np.concatenate((z_space, r, o_2), axis=-1)
-        for n in range(len(labels)):
-            self.clusters[labels[n]] = self.clusters[labels[n]].partial_fit(z_space[n].reshape(1, -1))
-
-        return
-
         z_space = np.concatenate((o, a), axis=-1)
         self.scaler.partial_fit(z_space)
         z_space_norm = self.scaler.transform(z_space)
@@ -819,10 +811,18 @@ class LocalClusterExperienceReplayRandomMember(BaseReplayMemory):
         z_space = np.concatenate((self.buffer["state"][:len(self)], self.buffer["action"][:len(self)]), axis=-1)
         z_space_norm = self.scaler.transform(z_space)
         labels = self.kmeans.predict(z_space_norm)
-        labels = labels.detach().cpu().numpy()
+        # labels = labels.detach().cpu().numpy()
         for n in range(self.n_clusters):
             buffer_idx = np.argwhere(labels == n)
             self.clusters[n] = buffer_idx.squeeze().tolist()
+
+        return
+
+        # max startup steps, else max max_timesteps
+        labels = self.kmeans.labels_
+        z_space = np.concatenate((z_space, r, o_2), axis=-1)
+        for n in range(len(labels)):
+            self.clusters[labels[n]] = self.clusters[labels[n]].partial_fit(z_space[n].reshape(1, -1))
 
         return
 
@@ -844,16 +844,12 @@ class LocalClusterExperienceReplayRandomMember(BaseReplayMemory):
         return super().sample(batch_size=batch_size)
 
     def sample(self, batch_size):
-        state_, action_, reward_, next_state_, done_ = self.sample_r(batch_size=batch_size * 100)
+        state, action, reward, next_state, done = self.sample_r(batch_size=batch_size)
 
-        z_space = np.concatenate((state_, action_), axis=-1)
+        z_space = np.concatenate((state, action), axis=-1)
         z_space_norm = self.scaler.transform(z_space)
         cluster_labels = self.kmeans.predict(z_space_norm)
 
-        state = np.empty(shape=(batch_size, self.state_dim))
-        action = np.empty(shape=(batch_size, self.action_dim))
-        reward = np.empty(shape=(batch_size, 1))
-        next_state = np.empty(shape=(batch_size, self.state_dim))
         v_state = np.empty(shape=(batch_size, self.state_dim))
         v_action = np.empty(shape=(batch_size, self.action_dim))
         v_reward = np.empty(shape=(batch_size, 1))
@@ -861,50 +857,14 @@ class LocalClusterExperienceReplayRandomMember(BaseReplayMemory):
         for n in range(batch_size):
             # cluster_members = np.where(self.clusters[:self.clusters_size] == cluster_labels[n])[0]
             # random_idx = np.random.choice(cluster_members, 2)
-            # random_idx = np.random.choice(self.clusters[cluster_labels[n]], 2)
+            random_idx = np.random.choice(self.clusters[cluster_labels[n]], 2)
 
-            batch_idx = np.argwhere(cluster_labels == n).squeeze().tolist()
-            if not isinstance(batch_idx, list):
-                batch_idx = [batch_idx]
-            batch_idx.append(-1)
-            random_idx = np.random.choice(batch_idx, 2)
+            state[n], v_state[n] = self.buffer["state"][random_idx[0]], self.buffer["state"][random_idx[1]]
+            action[n], v_action[n] = self.buffer["action"][random_idx[0]], self.buffer["action"][random_idx[1]]
+            reward[n], v_reward[n] = self.buffer["reward"][random_idx[0]], self.buffer["reward"][random_idx[1]]
+            next_state[n] = self.buffer["next_state"][random_idx[0]]
+            v_next_state[n] = self.buffer["next_state"][random_idx[1]]
 
-            if random_idx[0] == -1 and random_idx[1] == -1:
-                random_idx[0] = batch_idx[0]
-
-            if random_idx[0] == -1:
-                mu, std = self.clusters[cluster_labels[n]].mean_, self.clusters[cluster_labels[n]].scale_ * 0.01
-                state[n] = mu[:self.state_dim] + np.random.normal(size=mu[:self.state_dim].shape) * std[:self.state_dim]
-                action[n] = mu[self.state_dim:self.state_dim + self.action_dim] + np.random.normal(
-                    size=mu[self.state_dim:self.state_dim + self.action_dim].shape) * std[self.state_dim:self.state_dim + self.action_dim]
-                reward[n] = mu[self.state_dim + self.action_dim:self.state_dim + self.action_dim + 1] + np.random.normal(
-                    size=mu[self.state_dim + self.action_dim:self.state_dim + self.action_dim + 1].shape) * std[self.state_dim + self.action_dim:self.state_dim + self.action_dim + 1]
-                next_state[n] = mu[-self.state_dim:] + np.random.normal(size=mu[-self.state_dim:].shape) * std[-self.state_dim:]
-                action = np.clip(v_action, self.min_action, self.max_action)
-
-                v_state[n] = state_[random_idx[1]]
-                v_action[n] = action_[random_idx[1]]
-                v_reward[n] = reward_[random_idx[1]]
-                v_next_state[n] = next_state_[random_idx[1]]
-            elif random_idx[1] == -1:
-                state[n] = state_[random_idx[0]]
-                action[n] = action_[random_idx[0]]
-                reward[n] = reward_[random_idx[0]]
-                next_state[n] = next_state_[random_idx[0]]
-
-                mu, std = self.clusters[cluster_labels[n]].mean_, self.clusters[cluster_labels[n]].scale_ * 0.01
-                v_state[n] = mu[:self.state_dim] + np.random.normal(size=mu[:self.state_dim].shape) * std[:self.state_dim]
-                v_action[n] = mu[self.state_dim:self.state_dim + self.action_dim] + np.random.normal(
-                    size=mu[self.state_dim:self.state_dim + self.action_dim].shape) * std[self.state_dim:self.state_dim + self.action_dim]
-                v_reward[n] = mu[self.state_dim + self.action_dim:self.state_dim + self.action_dim + 1] + np.random.normal(
-                    size=mu[self.state_dim + self.action_dim:self.state_dim + self.action_dim + 1].shape) * std[self.state_dim + self.action_dim:self.state_dim + self.action_dim + 1]
-                v_next_state[n] = mu[-self.state_dim:] + np.random.normal(size=mu[-self.state_dim:].shape) * std[-self.state_dim:]
-                v_action = np.clip(v_action, self.min_action, self.max_action)
-            else:
-                state[n], v_state[n] = state_[random_idx[0]], state_[random_idx[1]]
-                action[n], v_action[n] = action_[random_idx[0]], action_[random_idx[1]]
-                reward[n], v_reward[n] = reward_[random_idx[0]], reward_[random_idx[1]]
-                next_state[n], v_next_state[n] = next_state_[random_idx[0]], next_state_[random_idx[1]]
 
         delta_state = (next_state - state).copy()
         v_delta_state = (v_next_state - v_state).copy()
