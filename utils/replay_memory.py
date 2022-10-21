@@ -810,7 +810,7 @@ class LocalClusterExperienceReplayRandomMember(BaseReplayMemory):
 
         current_size = len(self)
         if current_size < batch_size:
-            z_space = np.concatenate((self.buffer["state"][:len(self)], self.buffer["action"][:len(self)]), axis=-1)
+            z_space = np.concatenate((self.buffer["state"][:current_size], self.buffer["action"][:current_size]), axis=-1)
         else:
             indices = np.random.choice(np.arange(current_size), batch_size, replace=False)
             z_space = np.concatenate((self.buffer["state"][indices], self.buffer["action"][indices]), axis=-1)
