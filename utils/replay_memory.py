@@ -797,7 +797,7 @@ class LocalClusterExperienceReplayRandomMember(BaseReplayMemory):
         with open(save_path, "wb") as f:
             pickle.dump(data, f)
 
-    def update_clusters(self, o, a, r, o_2):
+    def update_clusters(self, o, a, r, o_2, batch_size=100000):
         z_space = np.concatenate((o, a), axis=-1)
         self.scaler.partial_fit(z_space)
         z_space_norm = self.scaler.transform(z_space)
@@ -808,13 +808,28 @@ class LocalClusterExperienceReplayRandomMember(BaseReplayMemory):
         z_space_norm = self.scaler.transform(z_space)
         self.kmeans = self.kmeans.partial_fit(z_space_norm)
 
-        z_space = np.concatenate((self.buffer["state"][:len(self)], self.buffer["action"][:len(self)]), axis=-1)
+        current_size = len(self)
+        if current_size < batch_size:
+            z_space = np.concatenate((self.buffer["state"][:len(self)], self.buffer["action"][:len(self)]), axis=-1)
+        else:
+            indices = np.random.choice(np.arange(current_size), batch_size, replace=False)
+            z_space = np.concatenate((self.buffer["state"][indices], self.buffer["action"][indices]), axis=-1)
+
         z_space_norm = self.scaler.transform(z_space)
         labels = self.kmeans.predict(z_space_norm)
-        # labels = labels.detach().cpu().numpy()
+
         for n in range(self.n_clusters):
-            buffer_idx = np.argwhere(labels == n)
-            self.clusters[n] = buffer_idx.squeeze().tolist()
+            if current_size < batch_size:
+                buffer_idx = np.argwhere(labels == n)
+            else:
+                indices_idx = np.argwhere(labels == n)
+                buffer_idx = indices[indices_idx]
+
+            buffer_idx = buffer_idx.squeeze().tolist()
+            if not isinstance(buffer_idx, list):
+                buffer_idx = [buffer_idx]
+
+            self.clusters[n] = buffer_idx
 
         return
 
@@ -857,14 +872,19 @@ class LocalClusterExperienceReplayRandomMember(BaseReplayMemory):
         for n in range(batch_size):
             # cluster_members = np.where(self.clusters[:self.clusters_size] == cluster_labels[n])[0]
             # random_idx = np.random.choice(cluster_members, 2)
-            random_idx = np.random.choice(self.clusters[cluster_labels[n]], 2)
+            if len(self.clusters[cluster_labels[n]]) > 0:
+                random_idx = np.random.choice(self.clusters[cluster_labels[n]], 2)
 
-            state[n], v_state[n] = self.buffer["state"][random_idx[0]], self.buffer["state"][random_idx[1]]
-            action[n], v_action[n] = self.buffer["action"][random_idx[0]], self.buffer["action"][random_idx[1]]
-            reward[n], v_reward[n] = self.buffer["reward"][random_idx[0]], self.buffer["reward"][random_idx[1]]
-            next_state[n] = self.buffer["next_state"][random_idx[0]]
-            v_next_state[n] = self.buffer["next_state"][random_idx[1]]
-
+                state[n], v_state[n] = self.buffer["state"][random_idx[0]], self.buffer["state"][random_idx[1]]
+                action[n], v_action[n] = self.buffer["action"][random_idx[0]], self.buffer["action"][random_idx[1]]
+                reward[n], v_reward[n] = self.buffer["reward"][random_idx[0]], self.buffer["reward"][random_idx[1]]
+                next_state[n] = self.buffer["next_state"][random_idx[0]]
+                v_next_state[n] = self.buffer["next_state"][random_idx[1]]
+            else:
+                state[n] = v_state[n] = state[n]
+                action[n] = v_action[n] = action[n]
+                reward[n] = v_reward[n] = reward[n]
+                next_state[n] = v_next_state[n] = next_state[n]
 
         delta_state = (next_state - state).copy()
         v_delta_state = (v_next_state - v_state).copy()
