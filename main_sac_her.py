@@ -80,20 +80,21 @@ def main(args):
 
     # Tensorboard
     writer = SummaryWriter(
-        "runs/{}_SAC_{}_{}_{}{}{}{}{}{}_vr{}_ur{}_nub{}{}".format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
-                                                                  args.env_name,
-                                                                  args.policy,
-                                                                  args.seed,
-                                                                  "_autotune" if args.automatic_entropy_tuning else "",
-                                                                  "_mb" if args.model_based else "",
-                                                                  "_nmer" if args.nmer else "",
-                                                                  "_her" if args.her else "",
-                                                                  "_slapp" if args.slapp else "",
-                                                                  args.v_ratio,
-                                                                  args.updates_per_step,
-                                                                  args.n_update_batches,
-                                                                  "_deterministic" if args.deterministic_model else "",
-                                                                  )
+        "runs/{}_SAC_{}_{}_{}{}{}{}{}{}{}_vr{}_ur{}_nub{}{}".format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
+                                                                    args.env_name,
+                                                                    args.policy,
+                                                                    args.seed,
+                                                                    "_autotune" if args.automatic_entropy_tuning else "",
+                                                                    "_mb" if args.model_based else "",
+                                                                    "_nmer" if args.nmer else "",
+                                                                    "_her" if args.her else "",
+                                                                    "_lcercc" if args.lcercc else "",
+                                                                    "_lcerrm" if args.lcerrm else "",
+                                                                    args.v_ratio,
+                                                                    args.updates_per_step,
+                                                                    args.n_update_batches,
+                                                                    "_deterministic" if args.deterministic_model else "",
+                                                                    )
         )
 
     # Save args/config to file
@@ -116,9 +117,14 @@ def main(args):
         elif args.nmer:
             from utils.her.replay_memory import HerNmerReplayMemory
             memory = HerNmerReplayMemory(env_params, args.replay_size, args=args, normalize=args.her_normalize)
-        elif args.slapp:
-            from utils.her.replay_memory import HerSlappReplayMemory
-            memory = HerSlappReplayMemory(env_params, args.replay_size, args=args, normalize=args.her_normalize)
+        elif args.lcercc:
+            from utils.her.replay_memory import HerLocalClusterExperienceReplayClusterCenterReplayMemory
+            memory = HerLocalClusterExperienceReplayClusterCenterReplayMemory(env_params, args.replay_size, args=args,
+                                                                              normalize=args.her_normalize)
+        elif args.lcerrm:
+            from utils.her.replay_memory import HerLocalClusterExperienceReplayRandomMemberReplayMemory
+            memory = HerLocalClusterExperienceReplayRandomMemberReplayMemory(env_params, args.replay_size, args=args,
+                                                                             normalize=args.her_normalize)
         else:
             from utils.her.replay_memory import SimpleReplayMemory
             memory = SimpleReplayMemory(env_params, args.replay_size, args=args, normalize=args.her_normalize)
@@ -162,7 +168,7 @@ def main(args):
         o, ag, g, a = np.array([o]), np.array([ag]), np.array([g]), np.array([a])
         memory.push_episode([o, ag, g, a])
 
-    if args.slapp:
+    if args.lcercc or args.lcerrm:
         o = memory.buffers["obs"][:len(memory)]
         ag = memory.buffers["ag"][:len(memory)]
         a = memory.buffers["actions"][:len(memory)]
@@ -302,7 +308,7 @@ def main(args):
                 writer.add_scalar('avg_reward/test_timesteps', avg_reward_eval, total_numsteps)
                 writer.add_scalar('avg_reward/test_success_rate', total_success_rate, total_numsteps)
 
-                if args.slapp:
+                if args.lcercc or args.lcerrm:
                     memory.save_cluster_centers(total_numsteps, writer.log_dir)
 
                 print("----------------------------------------")
@@ -325,7 +331,7 @@ def main(args):
         o, ag, g, a = np.array([o]), np.array([ag]), np.array([g]), np.array([a])
         memory.push_episode([o, ag, g, a])
 
-        if args.slapp:
+        if args.lcercc or args.lcerrm:
             o = memory.buffers["obs"][total_numsteps - steps_taken:total_numsteps]
             ag = memory.buffers["ag"][total_numsteps - steps_taken:total_numsteps]
             a = memory.buffers["actions"][total_numsteps - steps_taken:total_numsteps]
@@ -435,8 +441,6 @@ if __name__ == "__main__":
                         help='amount of neighbours to use (default: 10)')
     parser.add_argument('--per', action="store_true",
                         help='use PER (default: False)')
-    parser.add_argument('--slapp', action="store_true",
-                        help='use SLAPP (default: False)')
     parser.add_argument('--her-replay-strategy', type=str, default="future", metavar='N',
                         help='replay strategy to use (default: "future"')
     parser.add_argument('--her-replay-k', type=int, default=4, metavar='N',
@@ -447,10 +451,17 @@ if __name__ == "__main__":
                         help='use HER normalize (default: False)')
     parser.add_argument('--n-update-batches', type=int, default=20,
                         help='updates per rollout (default: 20)')
+    parser.add_argument('--lcercc', action="store_true",
+                        help='use LCERCC (default: False)')
+    parser.add_argument('--lcerrm', action="store_true",
+                        help='use LCERRM (default: False)')
 
     args = parser.parse_args()
 
     assert args.updates_per_step > 0 and args.n_update_batches == 0 or \
            args.updates_per_step == 0 and args.n_update_batches > 0, "One of --updates-per-step or --n-update-batches must be zero (0)"
+
+    assert args.lcercc and not args.lcerrm or not args.lcercc and args.lcerrm or \
+           not args.lcercc and not args.lcerrm, "LCERCC and LCERRM must not be both active at the same time"
 
     main(args)

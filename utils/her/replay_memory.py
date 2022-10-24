@@ -569,7 +569,7 @@ class HerNmerReplayMemory(SimpleReplayMemory):
         return state, action, reward, next_state, mask
 
 
-class HerSlappReplayMemory(SimpleReplayMemory):
+class HerLocalClusterExperienceReplayClusterCenterReplayMemory(SimpleReplayMemory):
     def __init__(self, env_params, buffer_size, normalize=False, args=None, debug=False):
         super().__init__(env_params, buffer_size, args=args, normalize=normalize)
 
@@ -701,6 +701,213 @@ class HerSlappReplayMemory(SimpleReplayMemory):
             mu, std = self.clusters[future_cluster_labels[n]].mean_, self.clusters[future_cluster_labels[n]].scale_ * 0.01
             ag_dim_start, ag_dim_end = obs_dim + g_dim + action_dim, obs_dim + 2 * g_dim + action_dim
             v_future_ag[n] = mu[ag_dim_start:ag_dim_end] + np.random.normal(size=mu[ag_dim_start:ag_dim_end].shape) * std[ag_dim_start:ag_dim_end]
+
+        her_ag = future_ag[use_her] * mixing_param[use_her] + v_future_ag[use_her] * (1 - mixing_param)[use_her]
+
+        # Replace goal
+        g[use_her] = her_ag
+
+        reward = self.env.compute_reward(next_ag, g, None)
+        mask = np.ones_like(reward)
+
+        if self.normalize:
+            state, g = self.o_norm.normalize(state), self.g_norm.normalize(g)
+            next_state = self.o_norm.normalize(next_state)
+
+        state = np.concatenate((state, g), axis=-1)
+        next_state = np.concatenate((next_state, g), axis=-1)
+
+        return state, action, reward, next_state, mask
+
+
+class HerLocalClusterExperienceReplayRandomMemberReplayMemory(SimpleReplayMemory):
+    def __init__(self, env_params, buffer_size, normalize=False, args=None, debug=False):
+        super().__init__(env_params, buffer_size, args=args, normalize=normalize)
+
+        # Cluster settings
+        self.n_clusters = self.T
+        self.scaler = StandardScaler()
+        self.kmeans = MiniBatchKMeans(n_clusters=self.n_clusters, random_state=args.seed, batch_size=2048, reassignment_ratio=0)
+        self.clusters = [[] for _ in range(self.n_clusters)]
+        # self.clusters = [StandardScaler() for _ in range(self.n_clusters)]
+
+        self.max_action = self.env.action_space.high
+        self.min_action = self.env.action_space.low
+
+        self.debug = debug
+        self.cluster_centers_kmeans = []
+        self.cluster_centers = []
+        self.timesteps = []
+
+    def save_cluster_centers(self, timesteps, save_path):
+        if not self.debug:
+            return
+
+        self.cluster_centers_kmeans.append(self.kmeans.cluster_centers_.copy())
+        cc = np.empty(shape=(self.n_clusters, 2 * self.env_params["obs"] + self.env_params["action"] + 3 * self.env_params["goal"]))
+        for n in range(self.n_clusters):
+            cc[n] = self.clusters[n].mean_.copy()
+        self.cluster_centers.append(cc)
+        self.timesteps.append(timesteps)
+
+        data = {
+            "cluster_centers_kmeans": np.array(self.cluster_centers_kmeans),
+            "cluster_centers": np.array(self.cluster_centers),
+            "timesteps": np.array(self.timesteps),
+        }
+
+        save_path = os.path.join(save_path, "cluster_centers.pkl")
+        with open(save_path, 'wb') as f:
+            pickle.dump(data, f)
+
+    def update_clusters(self, o, ag, a, o_2, ag_2, g, batch_size=100000):
+        z_space = np.concatenate((o, g, a), axis=-1)
+        self.scaler.partial_fit(z_space)
+        z_space_norm = self.scaler.transform(z_space)
+        self.kmeans = self.kmeans.partial_fit(z_space_norm)
+
+        current_size = len(self)
+        if current_size < batch_size:
+            z_space = np.concatenate((self.buffers["obs"][:current_size], self.buffers["g"][:current_size], self.buffers["actions"][:current_size]), axis=-1)
+        else:
+            indices = np.random.choice(np.arange(current_size), batch_size, replace=False)
+            z_space = np.concatenate((self.buffers["obs"][indices], self.buffers["g"][indices], self.buffers["actions"][indices]), axis=-1)
+
+        z_space_norm = self.scaler.transform(z_space)
+        labels = self.kmeans.predict(z_space_norm)
+
+        for n in range(self.n_clusters):
+            if current_size < batch_size:
+                buffer_idx = np.argwhere(labels == n)
+            else:
+                indices_idx = np.argwhere(labels == n)
+                buffer_idx = indices[indices_idx]
+
+            buffer_idx = buffer_idx.squeeze().tolist()
+            if not isinstance(buffer_idx, list):
+                buffer_idx = [buffer_idx]
+
+            self.clusters[n] = buffer_idx
+
+        return
+
+        # max startup steps, else max max_timesteps
+        labels = self.kmeans.labels_
+        z_space = np.concatenate((z_space, ag, o_2, ag_2), axis=-1)
+        for n in range(len(labels)):
+            self.clusters[labels[n]] = self.clusters[labels[n]].partial_fit(z_space[n].reshape(1, -1))
+
+    # Sample the data from the replay buffer
+    def sample(self, batch_size, return_transitions=False):
+        # Actually sample
+        sample_indices = np.random.randint(len(self), size=batch_size)
+
+        state, ag = self.buffers["obs"][sample_indices], self.buffers["ag"][sample_indices]
+        next_state, next_ag = self.buffers["obs_next"][sample_indices], self.buffers["ag_next"][sample_indices]
+        action, g = self.buffers["actions"][sample_indices], self.buffers["g"][sample_indices]
+
+        z_space = np.concatenate((state, g, action), axis=-1)
+        z_space_norm = self.scaler.transform(z_space)
+        cluster_labels = self.kmeans.predict(z_space_norm)
+
+        obs_dim, action_dim, g_dim = self.env_params["obs"], self.env_params["action"], self.env_params["goal"]
+
+        v_state = np.empty(shape=(batch_size, obs_dim))
+        v_ag = np.empty(shape=(batch_size, g_dim))
+        v_action = np.empty(shape=(batch_size, action_dim))
+        v_next_state = np.empty(shape=(batch_size, obs_dim))
+        v_next_ag = np.empty(shape=(batch_size, g_dim))
+        v_g = np.empty(shape=(batch_size, g_dim))
+        buffer_indices_0, buffer_indices_1 = [], []
+        for n in range(batch_size):
+            if len(self.clusters[cluster_labels[n]]) > 0:
+                random_idx = np.random.choice(self.clusters[cluster_labels[n]], 2)
+
+                state[n], v_state[n] = self.buffers["obs"][random_idx[0]], self.buffers["obs"][random_idx[1]]
+                g[n], v_g[n] = self.buffers["g"][random_idx[0]], self.buffers["g"][random_idx[1]]
+                action[n], v_action[n] = self.buffers["actions"][random_idx[0]], self.buffers["actions"][random_idx[1]]
+                ag[n], v_ag[n] = self.buffers["ag"][random_idx[0]], self.buffers["ag"][random_idx[1]]
+                next_state[n] = self.buffers["obs_next"][random_idx[0]]
+                v_next_state[n] = self.buffers["obs_next"][random_idx[1]]
+                next_ag[n] = self.buffers["ag_next"][random_idx[0]]
+                v_next_ag[n] = self.buffers["ag_next"][random_idx[1]]
+
+                buffer_indices_0.append(random_idx[0])
+                buffer_indices_1.append(random_idx[1])
+            else:
+                state[n] = v_state[n] = state[n]
+                g[n] = v_g[n] = g[n]
+                action[n] = v_action[n] = action[n]
+                ag[n] = v_ag[n] = ag[n]
+                next_state[n] = v_next_state[n] = next_state[n]
+                next_ag[n] = v_next_ag[n] = next_ag[n]
+
+                buffer_indices_0.append(sample_indices[n])
+                buffer_indices_1.append(sample_indices[n])
+        sample_indices_0 = np.array(buffer_indices_0)
+        sample_indices_1 = np.array(buffer_indices_1)
+
+        delta_state = (next_state - state).copy()
+        delta_ag = (next_ag - ag).copy()
+        v_delta_state = (v_next_state - v_state).copy()
+        v_delta_ag = (v_next_ag - v_ag).copy()
+
+        # Linearly interpolate sample and neighbor points
+        mixing_param = np.random.uniform(size=(len(state), 1))
+        state = state * mixing_param + v_state * (1 - mixing_param)
+        action = action * mixing_param + v_action * (1 - mixing_param)
+        delta_state = delta_state * mixing_param + v_delta_state * (1 - mixing_param)
+        next_state = state + delta_state
+        ag = ag * mixing_param + v_ag * (1 - mixing_param)
+        delta_ag = delta_ag * mixing_param + v_delta_ag * (1 - mixing_param)
+        next_ag = ag + delta_ag
+        g = g * mixing_param + v_g * (1 - mixing_param)
+
+        # Include HER style
+        current_episode_0 = sample_indices_0 // self.T
+        current_episode_timestep_0 = sample_indices_0 % self.T
+        current_episode_steps_left_0 = self.T - current_episode_timestep_0 - 1
+
+        current_episode_1 = sample_indices_1 // self.T
+        current_episode_timestep_1 = sample_indices_1 % self.T
+        current_episode_steps_left_1 = self.T - current_episode_timestep_1 - 1
+
+        future_probability = 1 - 1 / (1 + self.args.her_replay_k)
+        use_her = np.random.uniform(size=(len(sample_indices_0),)) < future_probability
+
+        future_offset_0 = np.random.uniform(size=batch_size) * current_episode_steps_left_0
+        future_offset_0 = future_offset_0.astype(int)
+        future_tmp_0 = future_offset_0 + current_episode_timestep_0
+        future_t_0 = current_episode_0 * self.T + future_tmp_0
+
+        future_offset_1 = np.random.uniform(size=batch_size) * current_episode_steps_left_1
+        future_offset_1 = future_offset_1.astype(int)
+        future_tmp_1 = future_offset_1 + current_episode_timestep_1
+        future_t_1 = current_episode_1 * self.T + future_tmp_1
+
+        future_state_0, future_ag_0 = self.buffers["obs"][future_t_0], self.buffers["ag"][future_t_0]
+        future_action_0, future_g_0 = self.buffers["actions"][future_t_0], self.buffers["g"][future_t_0]
+
+        future_z_space_0 = np.concatenate((future_state_0, future_g_0, future_action_0), axis=-1)
+        future_z_space_norm_0 = self.scaler.transform(future_z_space_0)
+        future_cluster_labels_0 = self.kmeans.predict(future_z_space_norm_0)
+
+        future_state_1, future_ag_1 = self.buffers["obs"][future_t_1], self.buffers["ag"][future_t_1]
+        future_action_1, future_g_1 = self.buffers["actions"][future_t_1], self.buffers["g"][future_t_1]
+
+        future_z_space_1 = np.concatenate((future_state_1, future_g_1, future_action_1), axis=-1)
+        future_z_space_norm_1 = self.scaler.transform(future_z_space_1)
+        future_cluster_labels_1 = self.kmeans.predict(future_z_space_norm_1)
+
+        future_ag, v_future_ag = np.empty(shape=(batch_size, g_dim)), np.empty(shape=(batch_size, g_dim))
+        for n in range(batch_size):
+            if len(self.clusters[future_cluster_labels_0[n]]) and len(self.clusters[future_cluster_labels_1[n]]) > 0:
+                random_idx_0 = np.random.choice(self.clusters[future_cluster_labels_0[n]], 1)
+                random_idx_1 = np.random.choice(self.clusters[future_cluster_labels_1[n]], 1)
+
+                future_ag[n], v_future_ag[n] = self.buffers["ag_next"][random_idx_0], self.buffers["ag_next"][random_idx_1]
+            else:
+                future_ag[n], v_future_ag[n] = self.buffers["ag_next"][future_t_0], self.buffers["ag_next"][future_t_1]
 
         her_ag = future_ag[use_her] * mixing_param[use_her] + v_future_ag[use_her] * (1 - mixing_param)[use_her]
 
