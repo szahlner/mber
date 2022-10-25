@@ -840,6 +840,7 @@ class LocalClusterExperienceReplayRandomMember(BaseReplayMemory):
         z_space_norm = self.scaler.transform(z_space)
         z_space_norm = torch.tensor(z_space_norm, dtype=torch.float, device=self.device)
         labels = self.kmeans.fit_predict(z_space_norm)
+        labels = labels.detach().cpu().numpy()
 
         for n in range(self.n_clusters):
             if current_size < batch_size:
@@ -888,6 +889,7 @@ class LocalClusterExperienceReplayRandomMember(BaseReplayMemory):
         z_space_norm = self.scaler.transform(z_space)
         z_space_norm = torch.tensor(z_space_norm, dtype=torch.float, device=self.device)
         cluster_labels = self.kmeans.predict(z_space_norm)
+        cluster_labels = cluster_labels.detach().cpu().numpy()
 
         v_state = np.empty(shape=(batch_size, self.state_dim))
         v_action = np.empty(shape=(batch_size, self.action_dim))
