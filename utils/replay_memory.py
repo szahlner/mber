@@ -758,7 +758,7 @@ class LocalClusterExperienceReplayRandomMember(BaseReplayMemory):
         self.n_clusters = args.epoch_length
         self.scaler = StandardScaler()
         self.kmeans = MiniBatchKMeans(n_clusters=self.n_clusters, random_state=seed, batch_size=2048, reassignment_ratio=0)
-        self.kmeans = KMeans(n_clusters=self.n_clusters, mode="euclidean", verbose=0)
+        self.kmeans = KMeans(n_clusters=self.n_clusters, mode="euclidean", verbose=1)
         self.clusters = [[] for _ in range(self.n_clusters)]
         # self.clusters = [StandardScaler() for _ in range(self.n_clusters)]
         self.clusters_current_position = 0
