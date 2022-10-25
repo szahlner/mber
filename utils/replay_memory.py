@@ -803,10 +803,16 @@ class LocalClusterExperienceReplayRandomMember(BaseReplayMemory):
         z_space_norm = self.scaler.transform(z_space)
         self.kmeans = self.kmeans.partial_fit(z_space_norm)
 
-        # z_space = np.concatenate((o, a), axis=-1)
-        # self.scaler.partial_fit(z_space)
-        # z_space_norm = self.scaler.transform(z_space)
-        # self.kmeans = self.kmeans.partial_fit(z_space_norm)
+        center = self.kmeans.cluster_centers_
+
+        z_space = np.concatenate((o, a), axis=-1)
+        self.scaler.partial_fit(z_space)
+        z_space_norm = self.scaler.transform(z_space)
+        self.kmeans = self.kmeans.partial_fit(z_space_norm)
+
+        center_ = self.kmeans.cluster_centers_
+        if not np.isclose(center, center_).all():
+            print("bin da")
 
         current_size = len(self)
         if current_size < batch_size:
