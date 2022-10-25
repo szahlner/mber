@@ -2,12 +2,14 @@ import os
 import pickle
 import random
 import numpy as np
+import torch
 
 from utils.utils import termination_fn
 from utils.segment_tree import MinSegmentTree, SumSegmentTree
 from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import MiniBatchKMeans
+from fast_pytorch_kmeans import KMeans
 
 
 class ReplayMemory:
@@ -756,6 +758,7 @@ class LocalClusterExperienceReplayRandomMember(BaseReplayMemory):
         self.n_clusters = args.epoch_length
         self.scaler = StandardScaler()
         self.kmeans = MiniBatchKMeans(n_clusters=self.n_clusters, random_state=seed, batch_size=2048, reassignment_ratio=0)
+        self.kmeans = KMeans(n_clusters=self.n_clusters, mode="euclidean", verbose=0)
         self.clusters = [[] for _ in range(self.n_clusters)]
         # self.clusters = [StandardScaler() for _ in range(self.n_clusters)]
         self.clusters_current_position = 0
@@ -772,6 +775,12 @@ class LocalClusterExperienceReplayRandomMember(BaseReplayMemory):
         self.cluster_centers_kmeans = []
         self.cluster_centers = []
         self.timesteps = []
+
+        import torch
+        if torch.cuda.is_available():
+            self.device = torch.device("cuda")
+        else:
+            self.device = torch.device("cpu")
 
         # from utils.utils import TensorMinibatchKMeans
         # self.kmeans = TensorMinibatchKMeans(n_clusters=self.n_clusters, random_state=seed)
@@ -802,13 +811,16 @@ class LocalClusterExperienceReplayRandomMember(BaseReplayMemory):
         self.scaler.partial_fit(z_space)
         z_space_norm = self.scaler.transform(z_space)
 
-        max_iter = 10
-        for _ in range(max_iter):
-            center = self.kmeans.cluster_centers_.copy()
-            self.kmeans = self.kmeans.partial_fit(z_space_norm)
-            center_ = self.kmeans.cluster_centers_.copy()
-            if np.isclose(center, center_).all():
-                break
+        # max_iter = 2000
+        # for _ in range(max_iter):
+        #     if hasattr(self.kmeans, "cluster_centers_"):
+        #         center = self.kmeans.cluster_centers_.copy()
+        #         self.kmeans = self.kmeans.partial_fit(z_space_norm)
+        #         center_ = self.kmeans.cluster_centers_.copy()
+        #         if np.isclose(center, center_).all():
+        #             break
+        #     else:
+        #         self.kmeans = self.kmeans.partial_fit(z_space_norm)
 
 
 
@@ -826,7 +838,8 @@ class LocalClusterExperienceReplayRandomMember(BaseReplayMemory):
             z_space = np.concatenate((self.buffer["state"][indices], self.buffer["action"][indices]), axis=-1)
 
         z_space_norm = self.scaler.transform(z_space)
-        labels = self.kmeans.predict(z_space_norm)
+        z_space_norm = torch.tensor(z_space_norm, dtype=torch.float, device=self.device)
+        labels = self.kmeans.fit_predict(z_space_norm)
 
         for n in range(self.n_clusters):
             if current_size < batch_size:
@@ -873,6 +886,7 @@ class LocalClusterExperienceReplayRandomMember(BaseReplayMemory):
 
         z_space = np.concatenate((state, action), axis=-1)
         z_space_norm = self.scaler.transform(z_space)
+        z_space_norm = torch.tensor(z_space_norm, dtype=torch.float, device=self.device)
         cluster_labels = self.kmeans.predict(z_space_norm)
 
         v_state = np.empty(shape=(batch_size, self.state_dim))
