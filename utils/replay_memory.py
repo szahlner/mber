@@ -9,7 +9,6 @@ from utils.segment_tree import MinSegmentTree, SumSegmentTree
 from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import MiniBatchKMeans
-from fast_pytorch_kmeans import KMeans
 
 
 class ReplayMemory:
@@ -754,6 +753,8 @@ class LocalClusterExperienceReplayRandomMember(BaseReplayMemory):
         super().__init__(capacity, seed, state_dim=state_dim, action_dim=np.prod(action_space.shape))
 
         assert args is not None, "args must not be None"
+
+        from fast_pytorch_kmeans import KMeans
 
         self.n_clusters = args.epoch_length
         self.scaler = StandardScaler()
