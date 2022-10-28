@@ -166,3 +166,4 @@ vae
 # files for now
 train_trifinger.py
 ddpg2.py
+MUJOCO_LOG.TXT
