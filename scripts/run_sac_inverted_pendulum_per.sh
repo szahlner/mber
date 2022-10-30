@@ -3,7 +3,7 @@
 env_name=InvertedPendulum-v2
 target_entropy=-0.05
 num_steps=16000
-start_steps=500
+start_steps=1000
 updates_per_step=10
 rollout_min_epoch=1
 rollout_max_epoch=15
