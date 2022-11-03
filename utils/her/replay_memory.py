@@ -4,6 +4,8 @@ import gym
 import numpy as np
 import pickle
 import copy
+import torch
+
 from mpi4py import MPI
 from sklearn.preprocessing import StandardScaler
 from sklearn.neighbors import NearestNeighbors
@@ -724,10 +726,13 @@ class HerLocalClusterExperienceReplayRandomMemberReplayMemory(SimpleReplayMemory
     def __init__(self, env_params, buffer_size, normalize=False, args=None, debug=False):
         super().__init__(env_params, buffer_size, args=args, normalize=normalize)
 
+        from fast_pytorch_kmeans import KMeans
+
         # Cluster settings
         self.n_clusters = self.T
         self.scaler = StandardScaler()
         self.kmeans = MiniBatchKMeans(n_clusters=self.n_clusters, random_state=args.seed, batch_size=2048, reassignment_ratio=0)
+        self.kmeans = KMeans(n_clusters=self.n_clusters, mode="euclidean", verbose=1)
         self.clusters = [[] for _ in range(self.n_clusters)]
         # self.clusters = [StandardScaler() for _ in range(self.n_clusters)]
 
@@ -738,6 +743,12 @@ class HerLocalClusterExperienceReplayRandomMemberReplayMemory(SimpleReplayMemory
         self.cluster_centers_kmeans = []
         self.cluster_centers = []
         self.timesteps = []
+
+        import torch
+        if torch.cuda.is_available():
+            self.device = torch.device("cuda")
+        else:
+            self.device = torch.device("cpu")
 
     def save_cluster_centers(self, timesteps, save_path):
         if not self.debug:
@@ -764,7 +775,34 @@ class HerLocalClusterExperienceReplayRandomMemberReplayMemory(SimpleReplayMemory
         z_space = np.concatenate((o, g, a), axis=-1)
         self.scaler.partial_fit(z_space)
         z_space_norm = self.scaler.transform(z_space)
-        self.kmeans = self.kmeans.partial_fit(z_space_norm)
+        # self.kmeans = self.kmeans.partial_fit(z_space_norm)
+
+        current_size = len(self)
+        if current_size < batch_size:
+            z_space = np.concatenate((self.buffers["obs"][:current_size], self.buffers["g"][:current_size], self.buffers["actions"][:current_size]), axis=-1)
+        else:
+            indices = np.random.choice(np.arange(current_size), batch_size, replace=False)
+            z_space = np.concatenate((self.buffers["obs"][indices], self.buffers["g"][indices], self.buffers["actions"][indices]), axis=-1)
+
+        z_space_norm = self.scaler.transform(z_space)
+        z_space_norm = torch.tensor(z_space_norm, dtype=torch.float, device=self.device)
+        labels = self.kmeans.fit_predict(z_space_norm)
+        labels = labels.detach().cpu().numpy()
+
+        for n in range(self.n_clusters):
+            if current_size < batch_size:
+                buffer_idx = np.argwhere(labels == n)
+            else:
+                indices_idx = np.argwhere(labels == n)
+                buffer_idx = indices[indices_idx]
+
+            buffer_idx = buffer_idx.squeeze().tolist()
+            if not isinstance(buffer_idx, list):
+                buffer_idx = [buffer_idx]
+
+            self.clusters[n] = buffer_idx
+
+        return
 
         current_size = len(self)
         if current_size < batch_size:
@@ -808,7 +846,9 @@ class HerLocalClusterExperienceReplayRandomMemberReplayMemory(SimpleReplayMemory
 
         z_space = np.concatenate((state, g, action), axis=-1)
         z_space_norm = self.scaler.transform(z_space)
+        z_space_norm = torch.tensor(z_space_norm, dtype=torch.float, device=self.device)
         cluster_labels = self.kmeans.predict(z_space_norm)
+        cluster_labels = cluster_labels.detach().cpu().numpy()
 
         obs_dim, action_dim, g_dim = self.env_params["obs"], self.env_params["action"], self.env_params["goal"]
 
@@ -890,6 +930,7 @@ class HerLocalClusterExperienceReplayRandomMemberReplayMemory(SimpleReplayMemory
 
         future_z_space_0 = np.concatenate((future_state_0, future_g_0, future_action_0), axis=-1)
         future_z_space_norm_0 = self.scaler.transform(future_z_space_0)
+        future_z_space_norm_0 = torch.tensor(future_z_space_norm_0, dtype=torch.float, device=self.device)
         future_cluster_labels_0 = self.kmeans.predict(future_z_space_norm_0)
 
         future_state_1, future_ag_1 = self.buffers["obs"][future_t_1], self.buffers["ag"][future_t_1]
@@ -897,6 +938,7 @@ class HerLocalClusterExperienceReplayRandomMemberReplayMemory(SimpleReplayMemory
 
         future_z_space_1 = np.concatenate((future_state_1, future_g_1, future_action_1), axis=-1)
         future_z_space_norm_1 = self.scaler.transform(future_z_space_1)
+        future_z_space_norm_1 = torch.tensor(future_z_space_norm_1, dtype=torch.float, device=self.device)
         future_cluster_labels_1 = self.kmeans.predict(future_z_space_norm_1)
 
         future_ag, v_future_ag = np.empty(shape=(batch_size, g_dim)), np.empty(shape=(batch_size, g_dim))
