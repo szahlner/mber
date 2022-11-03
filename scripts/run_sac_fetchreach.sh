@@ -45,8 +45,14 @@ do
   python main_sac_her.py --env-name $env_name --num-steps $num_steps --start-steps $start_steps --nmer --seed $seed --eval-timesteps 500 --n-update-batches $n_update_batches
 done
 
-# FetchReach-v1 HER SLAPP
+# FetchReach-v1 HER LCERCC
 for seed in 123 456 789
 do
-  python main_sac_her.py --env-name $env_name --num-steps $num_steps --start-steps $start_steps --slapp --seed $seed --eval-timesteps 500 --n-update-batches $n_update_batches
+  python main_sac_her.py --env-name $env_name --num-steps $num_steps --start-steps $start_steps --lcercc --seed $seed --eval-timesteps 500 --n-update-batches $n_update_batches
+done
+
+# FetchReach-v1 HER LCERRM
+for seed in 123 456 789
+do
+  python main_sac_her.py --env-name $env_name --num-steps $num_steps --start-steps $start_steps --lcerrm --seed $seed --eval-timesteps 500 --n-update-batches $n_update_batches
 done

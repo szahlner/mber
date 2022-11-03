@@ -57,9 +57,15 @@ cp "./scripts/run_sac_walker2d_lcerrm_456.sh" "./run_sac_walker2d_lcerrm_456.sh"
 cp "./scripts/run_sac_walker2d_lcerrm_789.sh" "./run_sac_walker2d_lcerrm_789.sh"
 
 cp "./scripts/run_sac_fetchreach.sh" "./run_sac_fetchreach.sh"
-cp "./scripts/run_sac_fetchpush.sh" "./run_sac_fetchpush.sh"
+cp "./scripts/run_sac_fetchreach_lcerrm.sh" "./run_sac_fetchreach_lcerrm.sh"
+
+# cp "./scripts/run_sac_fetchpush.sh" "./run_sac_fetchpush.sh"
+
 cp "./scripts/run_sac_handreach.sh" "./run_sac_handreach.sh"
+cp "./scripts/run_sac_handreach_lcerrm.sh" "./run_sac_handreach_lcerrm.sh"
+
 cp "./scripts/run_sac_handreach_hard.sh" "./run_sac_handreach_hard.sh"
+cp "./scripts/run_sac_handreach_hard_lcerrm.sh" "./run_sac_handreach_hard_lcerrm.sh"
 
 # cp "./scripts/run_ddpg_ant.sh" "./run_ddpg_ant.sh"
 # cp "./scripts/run_ddpg_halfcheetah.sh" "./run_ddpg_halfcheetah.sh"
@@ -125,9 +131,15 @@ chmod +x "./run_sac_walker2d_lcerrm_456.sh"
 chmod +x "./run_sac_walker2d_lcerrm_789.sh"
 
 chmod +x "./run_sac_fetchreach.sh"
-chmod +x "./run_sac_fetchpush.sh"
+chmod +x "./run_sac_fetchreach_lcerrm.sh"
+
+# chmod +x "./run_sac_fetchpush.sh"
+
 chmod +x "./run_sac_handreach.sh"
+chmod +x "./run_sac_handreach_lcerrm.sh"
+
 chmod +x "./run_sac_handreach_hard.sh"
+chmod +x "./run_sac_handreach_hard_lcerrm.sh"
 
 # chmod +x "./run_ddpg_ant.sh"
 # chmod +x "./run_ddpg_halfcheetah.sh"
