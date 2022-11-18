@@ -18,7 +18,7 @@ def main(args):
     args.cuda = True if torch.cuda.is_available() else False
 
     # Environment
-    if "ShadowHandReach" in args.env_name:
+    if args.env_name in ["ShadowHandReach", "ShadowHandBlock"]:
         import shadowhand_gym
 
     env = gym.make(args.env_name)
