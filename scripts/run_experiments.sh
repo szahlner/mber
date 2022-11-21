@@ -153,5 +153,9 @@ chmod +x "./run_sac_handreach_hard_lcerrm.sh"
 # chmod +x "./run_ddpg_inverted_pendulum_nmer.sh"
 # chmod +x "./run_ddpg_walker2d.sh"
 
+echo "Install additional dependencies"
+pip3 install fast_pytorch_kmeans  # lcerrm
+pip3 install h5py  # iiwa
+
 echo "ALL DONE, you are now prepared to run the experiments!"
 echo "######################################################"
