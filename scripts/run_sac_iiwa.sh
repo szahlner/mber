@@ -1,9 +1,13 @@
 #!/bin/bash
-# Select right directory
-cd "/home/"
 
-# Remove existing
-rm -r ./kuka-robosuite
+env_name=IIWA14_extended
+target_entropy=-7
+num_steps=500000
+start_steps=5000
+# updates_per_step=20
 
-# Clone new
-git clone https://gitlab.tuwien.ac.at/e376-acin/v4r/education/robot-vision/2022/kuka-robosuite.git
+# IIWA14_extended UTD 1
+for seed in 123 456 789
+do
+  python main_sac.py --env-name $env_name --target-entropy $target_entropy --num-steps $num_steps --start-steps $start_steps --updates-per-step 1 --seed $seed
+done
