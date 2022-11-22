@@ -341,7 +341,7 @@ def main(args):
 
                     if last_avg_reward_eval is None or avg_reward_eval > last_avg_reward_eval:
                         agent.save_checkpoint(args.env_name, writer.log_dir, total_numsteps)
-                    last_avg_reward_eval = avg_reward_eval
+                        last_avg_reward_eval = avg_reward_eval
 
         # Fill up replay memory
         steps_taken = len(episode_trajectory)
