@@ -77,6 +77,8 @@ def main(args):
 
     # Agent
     agent = SAC(env_params["obs"] + env_params["goal"], env.action_space, args)
+    if args.save_agent:
+        last_avg_reward_eval = None
 
     # Tensorboard
     writer = SummaryWriter(
@@ -315,6 +317,20 @@ def main(args):
                 print("Timestep Eval - Test Episodes: {}, Avg. Reward: {}, Avg. Success: {}".format(episodes_eval, round(avg_reward_eval, 2), round(total_success_rate, 3)))
                 print("----------------------------------------")
 
+                if args.save_agent:
+                    ckpts = []
+                    for file in os.listdir(writer.log_dir):
+                        if file.endswith(".zip"):
+                            ckpts.append(os.path.join(writer.log_dir, file))
+                    if len(ckpts) > args.keep_best_agents:
+                        latest_ckpts = sorted(ckpts, key=os.path.getctime)
+                        for ckpt in latest_ckpts[:-args.keep_best_agents]:
+                            os.remove(ckpt)
+
+                    if last_avg_reward_eval is None or avg_reward_eval > last_avg_reward_eval:
+                        agent.save_checkpoint(args.env_name, writer.log_dir, total_numsteps)
+                    last_avg_reward_eval = avg_reward_eval
+
         # Fill up replay memory
         steps_taken = len(episode_trajectory)
 
@@ -455,6 +471,10 @@ if __name__ == "__main__":
                         help='use LCERCC (default: False)')
     parser.add_argument('--lcerrm', action="store_true",
                         help='use LCERRM (default: False)')
+    parser.add_argument('--save-agent', action="store_true",
+                        help='save agent (default: False)')
+    parser.add_argument('--keep-best-agents', type=int, default=10, metavar='N',
+                        help='keep best X agents (default: 10)')
 
     args = parser.parse_args()
 
