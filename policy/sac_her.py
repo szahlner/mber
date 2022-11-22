@@ -218,28 +218,47 @@ class SAC(object):
         return qf1_loss.item(), qf2_loss.item(), policy_loss.item(), alpha_loss.item(), alpha_tlogs.item()
 
     # Save model parameters
-    def save_checkpoint(self, env_name, suffix="", ckpt_path=None):
-        if not os.path.exists('checkpoints/'):
-            os.makedirs('checkpoints/')
-        if ckpt_path is None:
-            ckpt_path = "checkpoints/sac_checkpoint_{}_{}".format(env_name, suffix)
-        print('Saving models to {}'.format(ckpt_path))
-        torch.save({'policy_state_dict': self.policy.state_dict(),
-                    'critic_state_dict': self.critic.state_dict(),
-                    'critic_target_state_dict': self.critic_target.state_dict(),
-                    'critic_optimizer_state_dict': self.critic_optim.state_dict(),
-                    'policy_optimizer_state_dict': self.policy_optim.state_dict()}, ckpt_path)
+    def save_checkpoint(self, env_name, ckpt_path, suffix=None):
+        if not os.path.exists(ckpt_path):
+            os.makedirs(ckpt_path)
+
+        if suffix is None:
+            file_name = "sac_ckpt_{}.zip".format(env_name)
+        else:
+            file_name = "sac_ckpt_{}_{}.zip".format(env_name, suffix)
+
+        ckpt_path = os.path.join(ckpt_path, file_name)
+
+        data = {
+            "policy_state_dict": self.policy.state_dict(),
+            "critic_state_dict": self.critic.state_dict(),
+            "critic_target_state_dict": self.critic_target.state_dict(),
+            "critic_optimizer_state_dict": self.critic_optim.state_dict(),
+            "policy_optimizer_state_dict": self.policy_optim.state_dict()
+        }
+        if hasattr(self, "alpha_optim"):
+            data["alpha"] = self.alpha
+            data["log_alpha"] = self.log_alpha
+            data["alpha_optimizer_state_dict"] = self.alpha_optim.state_dict()
+
+        print("Saving models to {}".format(ckpt_path))
+        torch.save(data, ckpt_path)
 
     # Load model parameters
     def load_checkpoint(self, ckpt_path, evaluate=False):
-        print('Loading models from {}'.format(ckpt_path))
+        print("Loading models from {}".format(ckpt_path))
         if ckpt_path is not None:
-            checkpoint = torch.load(ckpt_path)
-            self.policy.load_state_dict(checkpoint['policy_state_dict'])
-            self.critic.load_state_dict(checkpoint['critic_state_dict'])
-            self.critic_target.load_state_dict(checkpoint['critic_target_state_dict'])
-            self.critic_optim.load_state_dict(checkpoint['critic_optimizer_state_dict'])
-            self.policy_optim.load_state_dict(checkpoint['policy_optimizer_state_dict'])
+            ckpt = torch.load(ckpt_path)
+            self.policy.load_state_dict(ckpt["policy_state_dict"])
+            self.critic.load_state_dict(ckpt["critic_state_dict"])
+            self.critic_target.load_state_dict(ckpt["critic_target_state_dict"])
+            self.critic_optim.load_state_dict(ckpt["critic_optimizer_state_dict"])
+            self.policy_optim.load_state_dict(ckpt["policy_optimizer_state_dict"])
+
+            if hasattr(self, "alpha_optim"):
+                self.alpha = ckpt["alpha"]
+                self.log_alpha = ckpt["log_alpha"]
+                self.alpha_optim.load_state_dict(ckpt["alpha_optimizer_state_dict"])
 
             if evaluate:
                 self.policy.eval()
