@@ -656,7 +656,10 @@ class LocalClusterExperienceReplayClusterCenter(BaseReplayMemory):
 
         assert args is not None, "args must not be None"
 
-        self.n_clusters = args.epoch_length
+        if args.n_clusters > 0:
+            self.n_clusters = args.n_clusters
+        else:
+            self.n_clusters = args.epoch_length
         self.scaler = StandardScaler()
         self.kmeans = MiniBatchKMeans(n_clusters=self.n_clusters, random_state=seed, batch_size=2048, reassignment_ratio=0)
         self.clusters = [StandardScaler() for _ in range(self.n_clusters)]
@@ -756,7 +759,10 @@ class LocalClusterExperienceReplayRandomMember(BaseReplayMemory):
 
         from fast_pytorch_kmeans import KMeans
 
-        self.n_clusters = args.epoch_length
+        if args.n_clusters > 0:
+            self.n_clusters = args.n_clusters
+        else:
+            self.n_clusters = args.epoch_length
         self.scaler = StandardScaler()
         self.kmeans = MiniBatchKMeans(n_clusters=self.n_clusters, random_state=seed, batch_size=2048, reassignment_ratio=0)
         self.kmeans = KMeans(n_clusters=self.n_clusters, mode="euclidean", verbose=1)

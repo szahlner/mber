@@ -576,7 +576,10 @@ class HerLocalClusterExperienceReplayClusterCenterReplayMemory(SimpleReplayMemor
         super().__init__(env_params, buffer_size, args=args, normalize=normalize)
 
         # Cluster settings
-        self.n_clusters = self.T
+        if args.n_clusters > 0:
+            self.n_clusters = args.n_clusters
+        else:
+            self.n_clusters = self.T
         self.scaler = StandardScaler()
         self.kmeans = MiniBatchKMeans(n_clusters=self.n_clusters, random_state=args.seed, batch_size=2048, reassignment_ratio=0)
         self.clusters = [StandardScaler() for _ in range(self.n_clusters)]
@@ -729,7 +732,10 @@ class HerLocalClusterExperienceReplayRandomMemberReplayMemory(SimpleReplayMemory
         from fast_pytorch_kmeans import KMeans
 
         # Cluster settings
-        self.n_clusters = self.T
+        if args.n_clusters > 0:
+            self.n_clusters = args.n_clusters
+        else:
+            self.n_clusters = self.T
         self.scaler = StandardScaler()
         self.kmeans = MiniBatchKMeans(n_clusters=self.n_clusters, random_state=args.seed, batch_size=2048, reassignment_ratio=0)
         self.kmeans = KMeans(n_clusters=self.n_clusters, mode="euclidean", verbose=1)
@@ -774,7 +780,7 @@ class HerLocalClusterExperienceReplayRandomMemberReplayMemory(SimpleReplayMemory
     def update_clusters(self, o, ag, a, o_2, ag_2, g, batch_size=100000):
         z_space = np.concatenate((o, g, a), axis=-1)
         self.scaler.partial_fit(z_space)
-        z_space_norm = self.scaler.transform(z_space)
+        # z_space_norm = self.scaler.transform(z_space)
         # self.kmeans = self.kmeans.partial_fit(z_space_norm)
 
         current_size = len(self)
@@ -801,39 +807,6 @@ class HerLocalClusterExperienceReplayRandomMemberReplayMemory(SimpleReplayMemory
                 buffer_idx = [buffer_idx]
 
             self.clusters[n] = buffer_idx
-
-        return
-
-        current_size = len(self)
-        if current_size < batch_size:
-            z_space = np.concatenate((self.buffers["obs"][:current_size], self.buffers["g"][:current_size], self.buffers["actions"][:current_size]), axis=-1)
-        else:
-            indices = np.random.choice(np.arange(current_size), batch_size, replace=False)
-            z_space = np.concatenate((self.buffers["obs"][indices], self.buffers["g"][indices], self.buffers["actions"][indices]), axis=-1)
-
-        z_space_norm = self.scaler.transform(z_space)
-        labels = self.kmeans.predict(z_space_norm)
-
-        for n in range(self.n_clusters):
-            if current_size < batch_size:
-                buffer_idx = np.argwhere(labels == n)
-            else:
-                indices_idx = np.argwhere(labels == n)
-                buffer_idx = indices[indices_idx]
-
-            buffer_idx = buffer_idx.squeeze().tolist()
-            if not isinstance(buffer_idx, list):
-                buffer_idx = [buffer_idx]
-
-            self.clusters[n] = buffer_idx
-
-        return
-
-        # max startup steps, else max max_timesteps
-        labels = self.kmeans.labels_
-        z_space = np.concatenate((z_space, ag, o_2, ag_2), axis=-1)
-        for n in range(len(labels)):
-            self.clusters[labels[n]] = self.clusters[labels[n]].partial_fit(z_space[n].reshape(1, -1))
 
     # Sample the data from the replay buffer
     def sample(self, batch_size, return_transitions=False):

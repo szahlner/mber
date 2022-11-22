@@ -448,6 +448,8 @@ if __name__ == "__main__":
                         help='use LCERCC (default: False)')
     parser.add_argument('--lcerrm', action="store_true",
                         help='use LCERRM (default: False)')
+    parser.add_argument('--n-clusters', type=int, default=-1, metavar='N',
+                        help='amount of clusters to use for LCERRM (default: -1, use max_episode_timesteps)')
     parser.add_argument('--save-agent', action="store_true",
                         help='save agent (default: False)')
     parser.add_argument('--keep-best-agents', type=int, default=10, metavar='N',
