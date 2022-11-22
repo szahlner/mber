@@ -12,5 +12,5 @@ lr=0.001
 # IIWA14_extended UTD 1
 for seed in 123 456 789
 do
-  python main_sac.py --env-name $env_name --target-entropy $target_entropy --num-steps $num_steps --start-steps $start_steps --updates-per-step 1 --seed $seed --hidden-size $hidden_size --alpha $alpha --lr $lr --save-agent
+  python main_sac.py --env-name $env_name --target-entropy $target_entropy --num-steps $num_steps --start-steps $start_steps --updates-per-step 1 --seed $seed --hidden-size $hidden_size --alpha $alpha --lr $lr --save-agent --keep-best-agents 5
 done
