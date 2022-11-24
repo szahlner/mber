@@ -57,6 +57,9 @@ cp "./scripts/run_sac_walker2d_lcerrm_456.sh" "./run_sac_walker2d_lcerrm_456.sh"
 cp "./scripts/run_sac_walker2d_lcerrm_789.sh" "./run_sac_walker2d_lcerrm_789.sh"
 
 cp "./scripts/run_sac_iiwa.sh" "./run_sac_iiwa.sh"
+cp "./scripts/run_sac_iiwa_1.sh" "./run_sac_iiwa_1.sh"
+cp "./scripts/run_sac_iiwa_3.sh" "./run_sac_iiwa_3.sh"
+cp "./scripts/run_sac_iiwa_7.sh" "./run_sac_iiwa_7.sh"
 
 cp "./scripts/run_sac_fetchreach.sh" "./run_sac_fetchreach.sh"
 cp "./scripts/run_sac_fetchreach_lcerrm.sh" "./run_sac_fetchreach_lcerrm.sh"
@@ -141,6 +144,9 @@ chmod +x "./run_sac_walker2d_lcerrm_456.sh"
 chmod +x "./run_sac_walker2d_lcerrm_789.sh"
 
 chmod +x "./run_sac_iiwa.sh"
+chmod +x "./run_sac_iiwa_1.sh"
+chmod +x "./run_sac_iiwa_3.sh"
+chmod +x "./run_sac_iiwa_7.sh"
 
 chmod +x "./run_sac_fetchreach.sh"
 chmod +x "./run_sac_fetchreach_lcerrm.sh"
