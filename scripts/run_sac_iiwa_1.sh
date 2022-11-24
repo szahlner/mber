@@ -2,7 +2,7 @@
 
 env_name=IIWA14_extended
 target_entropy=-1
-num_steps=400000
+num_steps=500000
 start_steps=5000
 # updates_per_step=20
 
