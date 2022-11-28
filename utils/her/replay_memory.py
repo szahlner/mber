@@ -470,6 +470,80 @@ class SimpleReplayMemory:
         return self.current_size
 
 
+class NmerReplayMemory(SimpleReplayMemory):
+    def __init__(self, env_params, buffer_size, normalize=False, args=None, k_neighbours=10):
+        super().__init__(env_params, buffer_size, args=args, normalize=normalize)
+
+        # Interpolation settings
+        self.k_neighbours = k_neighbours
+        self.nn_indices = None
+
+    def update_neighbours(self):
+        # Get whole buffer
+        state = self.buffers["obs"][:self.current_size]
+        goal = self.buffers["g"][:self.current_size]
+        action = self.buffers["actions"][:self.current_size]
+
+        # Construct Z-space
+        z_space = np.concatenate((state, goal, action), axis=-1)
+        z_space_norm = StandardScaler(with_mean=False).fit_transform(z_space)
+
+        # NearestNeighbors - object
+        k_nn = NearestNeighbors(n_neighbors=self.k_neighbours).fit(z_space_norm)
+        self.nn_indices = k_nn.kneighbors(z_space_norm, return_distance=False)
+
+    # Sample the data from the replay buffer
+    def sample(self, batch_size, return_transitions=False):
+        assert self.nn_indices is not None, "Memory not prepared yet! Call .update_neighbours()"
+
+        # Sample
+        sample_indices = np.random.randint(len(self), size=batch_size)
+        nn_indices = self.nn_indices[sample_indices].copy()
+
+        # Remove itself, shuffle and chose
+        nn_indices = nn_indices[:, 1:]
+        indices = np.random.rand(*nn_indices.shape).argsort(axis=1)
+        nn_indices = np.take_along_axis(nn_indices, indices, axis=1)
+        nn_indices = nn_indices[:, 0]
+
+        # Actually sample
+        state, ag = self.buffers["obs"][sample_indices], self.buffers["ag"][sample_indices]
+        next_state, next_ag = self.buffers["obs_next"][sample_indices], self.buffers["ag_next"][sample_indices]
+        action, g = self.buffers["actions"][sample_indices], self.buffers["g"][sample_indices]
+
+        nn_state, nn_ag = self.buffers["obs"][nn_indices], self.buffers["ag"][nn_indices]
+        nn_next_state, nn_next_ag = self.buffers["obs_next"][nn_indices], self.buffers["ag_next"][nn_indices]
+        nn_action, nn_g = self.buffers["actions"][nn_indices], self.buffers["g"][nn_indices]
+
+        delta_state = (next_state - state).copy()
+        delta_ag = (next_ag - ag).copy()
+        nn_delta_state = (nn_next_state - nn_state).copy()
+        nn_delta_ag = (nn_next_ag - nn_ag).copy()
+
+        # Linearly interpolate sample and neighbor points
+        mixing_param = np.random.uniform(size=(len(state), 1))
+        state = state * mixing_param + nn_state * (1 - mixing_param)
+        action = action * mixing_param + nn_action * (1 - mixing_param)
+        delta_state = delta_state * mixing_param + nn_delta_state * (1 - mixing_param)
+        next_state = state + delta_state
+        ag = ag * mixing_param + nn_ag * (1 - mixing_param)
+        delta_ag = delta_ag * mixing_param + nn_delta_ag * (1 - mixing_param)
+        next_ag = ag + delta_ag
+        g = g * mixing_param + nn_g * (1 - mixing_param)
+
+        reward = self.env.compute_reward(next_ag, g, None)
+        mask = np.ones_like(reward)
+
+        if self.normalize:
+            state, g = self.o_norm.normalize(state), self.g_norm.normalize(g)
+            next_state = self.o_norm.normalize(next_state)
+
+        state = np.concatenate((state, g), axis=-1)
+        next_state = np.concatenate((next_state, g), axis=-1)
+
+        return state, action, reward, next_state, mask
+
+
 class HerNmerReplayMemory(SimpleReplayMemory):
     def __init__(self, env_params, buffer_size, normalize=False, args=None, k_neighbours=10):
         super().__init__(env_params, buffer_size, args=args, normalize=normalize)

@@ -111,14 +111,17 @@ def main(args):
         memory = HerMbpoReplayMemory(env_params, args.replay_size, v_ratio=args.v_ratio, args=args,
                                      sample_func=sampler.sample_her_transitions, normalize=args.her_normalize)
     else:
-        if args.her:
+        if args.her and not args.nmer:
             from utils.her.replay_memory import HerSampler, HerReplayMemory
             sampler = HerSampler("future", args.her_replay_k, env.compute_reward)
             memory = HerReplayMemory(env_params, args.replay_size,
                                      sample_func=sampler.sample_her_transitions, normalize=args.her_normalize)
-        elif args.nmer:
+        elif args.nmer and args.her:
             from utils.her.replay_memory import HerNmerReplayMemory
             memory = HerNmerReplayMemory(env_params, args.replay_size, args=args, normalize=args.her_normalize)
+        elif args.nmer:
+            from utils.her.replay_memory import NmerReplayMemory
+            memory = NmerReplayMemory(env_params, args.replay_size, args=args, normalize=args.her_normalize)
         elif args.lcercc:
             from utils.her.replay_memory import HerLocalClusterExperienceReplayClusterCenterReplayMemory
             memory = HerLocalClusterExperienceReplayClusterCenterReplayMemory(env_params, args.replay_size, args=args,
