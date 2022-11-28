@@ -348,13 +348,13 @@ def main(args):
         memory.push_episode([o, ag, g, a])
 
         if args.lcercc or args.lcerrm:
-            o = memory.buffers["obs"][total_numsteps - steps_taken:total_numsteps]
-            ag = memory.buffers["ag"][total_numsteps - steps_taken:total_numsteps]
-            a = memory.buffers["actions"][total_numsteps - steps_taken:total_numsteps]
-            o_2 = memory.buffers["obs_next"][total_numsteps - steps_taken:total_numsteps]
-            ag_2 = memory.buffers["ag_next"][total_numsteps - steps_taken:total_numsteps]
-            g = memory.buffers["g"][total_numsteps - steps_taken:total_numsteps]
-            memory.update_clusters(o, ag, a, o_2, ag_2, g)
+            # o = memory.buffers["obs"][total_numsteps - steps_taken:total_numsteps]
+            # ag = memory.buffers["ag"][total_numsteps - steps_taken:total_numsteps]
+            # a = memory.buffers["actions"][total_numsteps - steps_taken:total_numsteps]
+            # o_2 = memory.buffers["obs_next"][total_numsteps - steps_taken:total_numsteps]
+            # ag_2 = memory.buffers["ag_next"][total_numsteps - steps_taken:total_numsteps]
+            # g = memory.buffers["g"][total_numsteps - steps_taken:total_numsteps]
+            memory.update_clusters(o[0, :-1], ag[0, :-1], a[0], o[0, 1:], ag[0, 1:], g[0])
 
         if args.nmer:
             memory.update_neighbours()
