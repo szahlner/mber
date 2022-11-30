@@ -282,7 +282,7 @@ def main(args):
 
             if total_numsteps % args.eval_timesteps == 0 and args.eval is True:
                 avg_reward_eval = 0.
-                episodes_eval = 10
+                episodes_eval = args.eval_episodes  # 10
                 total_success_rate = []
                 for _ in range(episodes_eval):
                     state_eval = eval_env.reset()
@@ -426,6 +426,8 @@ if __name__ == "__main__":
                         help='size of replay buffer (default: 10000000)')
     parser.add_argument('--target-entropy', type=float, default=-1, metavar='N',
                         help='Target entropy to use (default: -1)')
+    parser.add_argument('--eval-episodes', type=int, default=10, metavar='N',
+                        help='How many episodes to eval (default: 10)')
     parser.add_argument('--cuda', action="store_true",
                         help='run on CUDA (default: False)')
     parser.add_argument('--model-based', action="store_true",
