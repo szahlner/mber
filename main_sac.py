@@ -17,12 +17,25 @@ def main(args):
     args.cuda = True if torch.cuda.is_available() else False
 
     # Environment
-    if args.env_name == "IIWA14_extended":
+    if "IIWA14-extended" in args.env_name:
         import robosuite as suite
         from robosuite.wrappers import GymWrapper
         from robosuite.controllers import load_controller_config
 
-        env_id = "Lift"
+        env_id = None
+        if "Lift" in args.env_name:
+            env_id = "Lift"
+
+        assert env_id is not None, 'env-id not supported - supported env-ids: "Lift"'
+
+        controller = None
+        if "Position" in args.env_name:
+            controller = "OSC_POSITION"
+        elif "Pose" in args.env_name:
+            controller = "OSC_POSE"
+
+        assert controller is not None, 'controller not supported - supported controllers: "Position", "Pose"'
+
         env = GymWrapper(
             suite.make(
                 env_id,
@@ -33,7 +46,7 @@ def main(args):
                 reward_shaping=True,  # use dense rewards
                 control_freq=20,  # control should happen fast enough so that simulation looks smooth
                 horizon=1000,
-                controller_configs=load_controller_config(default_controller="OSC_POSE"),
+                controller_configs=load_controller_config(default_controller=controller),
             )
         )
         env._max_episode_steps = 1000
@@ -47,8 +60,17 @@ def main(args):
     env.seed(args.seed)
     env.action_space.seed(args.seed)
 
-    if args.env_name == "IIWA14_extended":
-        env_id = "Lift"
+    if "IIWA14-extended" in args.env_name:
+        env_id = None
+        if "Lift" in args.env_name:
+            env_id = "Lift"
+
+        controller = None
+        if "Position" in args.env_name:
+            controller = "OSC_POSITION"
+        elif "Pose" in args.env_name:
+            controller = "OSC_POSE"
+
         eval_env = GymWrapper(
             suite.make(
                 env_id,
@@ -59,7 +81,7 @@ def main(args):
                 reward_shaping=True,  # use dense rewards
                 control_freq=20,  # control should happen fast enough so that simulation looks smooth
                 horizon=1000,
-                controller_configs=load_controller_config(default_controller="OSC_POSE"),
+                controller_configs=load_controller_config(default_controller=controller),
             )
         )
     else:
