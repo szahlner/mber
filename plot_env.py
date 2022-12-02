@@ -5,7 +5,7 @@ from robosuite.wrappers import GymWrapper
 from robosuite.controllers import load_controller_config
 
 
-env_id = "Lift"
+env_id = "KukaLinearLift"
 env = GymWrapper(
     suite.make(
         env_id,
@@ -16,7 +16,7 @@ env = GymWrapper(
         reward_shaping=True,  # use dense rewards
         control_freq=20,  # control should happen fast enough so that simulation looks smooth
         horizon=1000,
-        controller_configs=load_controller_config(default_controller="OSC_POSE"),
+        controller_configs=load_controller_config(default_controller="OSC_POSITION"),
         renderer="mujoco",
     )
 )
@@ -28,5 +28,6 @@ while not done:
     # Random action
     action = env.action_space.sample()
     obs, reward, done, info = env.step(action)
+    env.render()
 
 env.close()
