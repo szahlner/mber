@@ -1,5 +1,5 @@
 import gym
-import shadowhand_gym
+# import shadowhand_gym
 import robosuite as suite
 from robosuite.wrappers import GymWrapper
 from robosuite.controllers import load_controller_config
@@ -9,7 +9,7 @@ env_id = "KukaLinearLift"
 env = GymWrapper(
     suite.make(
         env_id,
-        robots="IIWA14_extended",  # use Sawyer robot
+        robots="IIWA_extended",  # use Sawyer robot
         use_camera_obs=False,  # do not use pixel observations
         has_offscreen_renderer=False,  # not needed since not using pixel obs
         has_renderer=True,  # make sure we can render to the screen
@@ -29,5 +29,5 @@ while not done:
     action = env.action_space.sample()
     obs, reward, done, info = env.step(action)
     env.render()
-
+    print(reward)
 env.close()

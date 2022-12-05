@@ -17,14 +17,14 @@ def main(args):
     args.cuda = True if torch.cuda.is_available() else False
 
     # Environment
-    if "IIWA14-extended" in args.env_name:
+    if "IIWA-extended" in args.env_name:
         import robosuite as suite
         from robosuite.wrappers import GymWrapper
         from robosuite.controllers import load_controller_config
 
         env_id = None
-        if "Lift" in args.env_name:
-            env_id = "Lift"
+        if "KukaLinearLift" in args.env_name:
+            env_id = "KukaLinearLift"
 
         assert env_id is not None, 'env-id not supported - supported env-ids: "Lift"'
 
@@ -39,7 +39,7 @@ def main(args):
         env = GymWrapper(
             suite.make(
                 env_id,
-                robots="IIWA14_extended",  # use Sawyer robot
+                robots="IIWA_extended",  # use Sawyer robot
                 use_camera_obs=False,  # do not use pixel observations
                 has_offscreen_renderer=False,  # not needed since not using pixel obs
                 has_renderer=False,  # make sure we can render to the screen
@@ -60,10 +60,10 @@ def main(args):
     env.seed(args.seed)
     env.action_space.seed(args.seed)
 
-    if "IIWA14-extended" in args.env_name:
+    if "IIWA-extended" in args.env_name:
         env_id = None
-        if "Lift" in args.env_name:
-            env_id = "Lift"
+        if "KukaLinearLift" in args.env_name:
+            env_id = "KukaLinearLift"
 
         controller = None
         if "Position" in args.env_name:
@@ -74,7 +74,7 @@ def main(args):
         eval_env = GymWrapper(
             suite.make(
                 env_id,
-                robots="IIWA14_extended",  # use Sawyer robot
+                robots="IIWA_extended",  # use Sawyer robot
                 use_camera_obs=False,  # do not use pixel observations
                 has_offscreen_renderer=False,  # not needed since not using pixel obs
                 has_renderer=False,  # make sure we can render to the screen
