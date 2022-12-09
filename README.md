@@ -1,4 +1,4 @@
-# mbher
+# mber
 
 [![GitHub](https://img.shields.io/github/license/szahlner/hybrid-rl.svg)](LICENSE)
 
