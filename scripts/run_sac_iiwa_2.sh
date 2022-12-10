@@ -1,7 +1,7 @@
 #!/bin/bash
 
 env_name=IIWA-extended-Lift-Position
-target_entropy=-1
+target_entropy=-2
 num_steps=500000
 start_steps=5000
 # updates_per_step=20
