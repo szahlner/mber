@@ -25,8 +25,10 @@ def main(args):
         env_id = None
         if "KukaLinearLift" in args.env_name:
             env_id = "KukaLinearLift"
+        elif "Lift" in args.env_name:
+            env_id = "Lift"
 
-        assert env_id is not None, 'env-id not supported - supported env-ids: "Lift"'
+        assert env_id is not None, 'env-id not supported - supported env-ids: "KukaLinearLift", "Lift"'
 
         controller = None
         if "Position" in args.env_name:
@@ -64,6 +66,8 @@ def main(args):
         env_id = None
         if "KukaLinearLift" in args.env_name:
             env_id = "KukaLinearLift"
+        elif "Lift" in args.env_name:
+            env_id = "Lift"
 
         controller = None
         if "Position" in args.env_name:
