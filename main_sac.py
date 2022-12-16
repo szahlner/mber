@@ -47,11 +47,11 @@ def main(args):
                 has_renderer=False,  # make sure we can render to the screen
                 reward_shaping=True,  # use dense rewards
                 control_freq=20,  # control should happen fast enough so that simulation looks smooth
-                horizon=1000,
+                horizon=args.epoch_length,
                 controller_configs=load_controller_config(default_controller=controller),
             )
         )
-        env._max_episode_steps = 1000
+        env._max_episode_steps = args.epoch_length
     else:
         env = gym.make(args.env_name)
 
@@ -84,7 +84,7 @@ def main(args):
                 has_renderer=False,  # make sure we can render to the screen
                 reward_shaping=True,  # use dense rewards
                 control_freq=20,  # control should happen fast enough so that simulation looks smooth
-                horizon=1000,
+                horizon=args.epoch_length,
                 controller_configs=load_controller_config(default_controller=controller),
             )
         )
