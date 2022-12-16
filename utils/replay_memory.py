@@ -816,26 +816,6 @@ class LocalClusterExperienceReplayRandomMember(BaseReplayMemory):
     def update_clusters(self, o, a, r, o_2, batch_size=100000):
         z_space = np.concatenate((o, a), axis=-1)
         self.scaler.partial_fit(z_space)
-        z_space_norm = self.scaler.transform(z_space)
-
-        # max_iter = 2000
-        # for _ in range(max_iter):
-        #     if hasattr(self.kmeans, "cluster_centers_"):
-        #         center = self.kmeans.cluster_centers_.copy()
-        #         self.kmeans = self.kmeans.partial_fit(z_space_norm)
-        #         center_ = self.kmeans.cluster_centers_.copy()
-        #         if np.isclose(center, center_).all():
-        #             break
-        #     else:
-        #         self.kmeans = self.kmeans.partial_fit(z_space_norm)
-
-
-
-
-        # z_space = np.concatenate((o, a), axis=-1)
-        # self.scaler.partial_fit(z_space)
-        # z_space_norm = self.scaler.transform(z_space)
-        # self.kmeans = self.kmeans.partial_fit(z_space_norm)
 
         current_size = len(self)
         if current_size < batch_size:
@@ -861,30 +841,6 @@ class LocalClusterExperienceReplayRandomMember(BaseReplayMemory):
                 buffer_idx = [buffer_idx]
 
             self.clusters[n] = buffer_idx
-
-        return
-
-        # max startup steps, else max max_timesteps
-        labels = self.kmeans.labels_
-        z_space = np.concatenate((z_space, r, o_2), axis=-1)
-        for n in range(len(labels)):
-            self.clusters[labels[n]] = self.clusters[labels[n]].partial_fit(z_space[n].reshape(1, -1))
-
-        return
-
-        labels = self.kmeans.labels_
-        for n in range(len(labels)):
-            if self.reached_capacity:
-                for k in range(len(self.clusters)):
-                    if self.clusters_current_position in self.clusters[k]:
-                        self.clusters[k].remove(self.clusters_current_position)
-
-            self.clusters[labels[n]].append(self.clusters_current_position)
-            self.clusters_current_position += 1
-
-            if self.clusters_current_position % self.capacity == 0:
-                self.clusters_current_position = 0
-                self.reached_capacity = True
 
     def sample_r(self, batch_size):
         return super().sample(batch_size=batch_size)
