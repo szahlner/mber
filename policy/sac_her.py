@@ -218,7 +218,7 @@ class SAC(object):
         return qf1_loss.item(), qf2_loss.item(), policy_loss.item(), alpha_loss.item(), alpha_tlogs.item()
 
     # Save model parameters
-    def save_checkpoint(self, env_name, ckpt_path, suffix=None):
+    def save_checkpoint(self, env_name, ckpt_path, suffix=None, memory=None):
         if not os.path.exists(ckpt_path):
             os.makedirs(ckpt_path)
 
@@ -236,16 +236,23 @@ class SAC(object):
             "critic_optimizer_state_dict": self.critic_optim.state_dict(),
             "policy_optimizer_state_dict": self.policy_optim.state_dict()
         }
+
         if hasattr(self, "alpha_optim"):
             data["alpha"] = self.alpha
             data["log_alpha"] = self.log_alpha
             data["alpha_optimizer_state_dict"] = self.alpha_optim.state_dict()
 
+        if memory is not None:
+            data["obs_mean"] = memory.o_norm.mean
+            data["obs_std"] = memory.o_norm.std
+            data["goal_mean"] = memory.g_norm.mean
+            data["goal_std"] = memory.g_norm.std
+
         print("Saving models to {}".format(ckpt_path))
         torch.save(data, ckpt_path)
 
     # Load model parameters
-    def load_checkpoint(self, ckpt_path, evaluate=False):
+    def load_checkpoint(self, ckpt_path, evaluate=False, load_norm_stats=False):
         print("Loading models from {}".format(ckpt_path))
         if ckpt_path is not None:
             ckpt = torch.load(ckpt_path, map_location=self.device)
@@ -260,6 +267,15 @@ class SAC(object):
                 self.log_alpha = ckpt["log_alpha"]
                 self.alpha_optim.load_state_dict(ckpt["alpha_optimizer_state_dict"])
 
+            norm_stats = None
+            if load_norm_stats:
+                norm_stats = {
+                    "obs_mean": ckpt["obs_mean"],
+                    "obs_std": ckpt["obs_std"],
+                    "goal_mean": ckpt["goal_mean"],
+                    "goal_std": ckpt["goal_std"],
+                }
+
             if evaluate:
                 self.policy.eval()
                 self.critic.eval()
@@ -268,3 +284,5 @@ class SAC(object):
                 self.policy.train()
                 self.critic.train()
                 self.critic_target.train()
+
+            return norm_stats
