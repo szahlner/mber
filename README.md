@@ -1,8 +1,6 @@
 # mber
 
-[![GitHub](https://img.shields.io/github/license/szahlner/hybrid-rl.svg)](LICENSE)
-
-work in progress...
+Archived, previous and base version of [Local Cluster Experience Replay (LCER)](https://github.com/szahlner/lcer).
 
 ## Credits
  
